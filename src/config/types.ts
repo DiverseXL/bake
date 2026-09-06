@@ -14,11 +14,22 @@ export const activeClusterSchema = z.object({
 
 export type ActiveCluster = z.infer<typeof activeClusterSchema>;
 
+export const nightlyWalletSchema = z.object({
+  publicKey: z.string(),
+  sessionId: z.string(),
+});
+
+export type NightlyWallet = z.infer<typeof nightlyWalletSchema>;
+
 export const globalConfigSchema = z.object({
   // Active cluster name (must match a known preset)
   cluster: z.string().default("cookie"),
   // Full active cluster info (name + resolved RPC URL)
   activeCluster: activeClusterSchema.optional(),
+  // Path to the active local keypair file
+  walletPath: z.string().optional(),
+  // Nightly Connect wallet (for high-stakes confirmations)
+  nightlyWallet: nightlyWalletSchema.optional(),
   // Wallet/session placeholders
   wallet: z
     .object({

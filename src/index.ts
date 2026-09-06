@@ -15,6 +15,7 @@ import {
   decodeCommand,
   topCommand,
   mcpCommand,
+  whoamiCommand,
 } from "./commands/index.js";
 
 const VERSION = "0.1.0";
@@ -72,6 +73,7 @@ program.addCommand(forkCommand);
 program.addCommand(decodeCommand);
 program.addCommand(topCommand);
 program.addCommand(mcpCommand);
+program.addCommand(whoamiCommand);
 
 program.action(async () => {
   await loadGlobalConfig();

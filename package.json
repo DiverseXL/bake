@@ -17,12 +17,15 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.0",
+    "@nightlylabs/nightly-connect-solana": "^0.0.32",
     "@solana/web3.js": "^2.0.0",
+    "@types/qrcode": "^1.5.6",
     "chalk": "^4.1.2",
     "commander": "^12.1.0",
     "conf": "^10.1.0",
     "ora": "^8.1.0",
     "picocolors": "^1.0.0",
+    "qrcode": "^1.5.4",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -32,6 +35,12 @@
     "tsx": "^4.15.0",
     "typescript": "^5.5.0"
   },
-  "keywords": ["solana", "svm", "cli", "cookie-chain", "anchor"],
+  "keywords": [
+    "solana",
+    "svm",
+    "cli",
+    "cookie-chain",
+    "anchor"
+  ],
   "license": "MIT"
 }
