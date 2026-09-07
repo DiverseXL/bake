@@ -1,0 +1,180 @@
+{
+  "address": "56Vj61zFW4hHV6wdjnisrHtVwWDqyjixjpBgnoRJvzxL",
+  "metadata": {
+    "name": "recipe_book",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "initialize_recipe_book",
+      "discriminator": [45, 128, 206, 174, 93, 40, 159, 90],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "recipe_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [114, 101, 99, 105, 112, 101, 95, 98, 111, 111, 107]
+              },
+              {
+                "kind": "arg",
+                "path": "target_program_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "target_program_id",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "register_deploy",
+      "discriminator": [230, 195, 49, 2, 217, 10, 242, 37],
+      "accounts": [
+        {
+          "name": "deployer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "recipe_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [114, 101, 99, 105, 112, 101, 95, 98, 111, 111, 107]
+              },
+              {
+                "kind": "account",
+                "path": "recipe_book.target_program_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "relations": ["recipe_book"]
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [101, 110, 116, 114, 121]
+              },
+              {
+                "kind": "account",
+                "path": "recipe_book"
+              },
+              {
+                "kind": "account",
+                "path": "recipe_book.entry_count"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "repo",
+          "type": "string"
+        },
+        {
+          "name": "commit",
+          "type": "string"
+        },
+        {
+          "name": "build_hash",
+          "type": {
+            "array": ["u8", 32]
+          }
+        },
+        {
+          "name": "buffer",
+          "type": "pubkey"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "RecipeBook",
+      "discriminator": [214, 37, 118, 236, 37, 167, 238, 193]
+    },
+    {
+      "name": "Entry",
+      "discriminator": [63, 18, 152, 113, 215, 246, 221, 250]
+    }
+  ],
+  "errors": [
+    {
+      "name": "RecipeBookAlreadyExists",
+      "code": 6000,
+      "msg": "A RecipeBook already exists for this target program"
+    },
+    {
+      "name": "Unauthorized",
+      "code": 6001,
+      "msg": "Signer is not the authority of this RecipeBook"
+    },
+    {
+      "name": "StringTooLong",
+      "code": 6002,
+      "msg": "String exceeds maximum allowed length"
+    }
+  ],
+  "types": [
+    {
+      "name": "RecipeBook",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {"name": "target_program_id", "type": "pubkey"},
+          {"name": "authority", "type": "pubkey"},
+          {"name": "entry_count", "type": "u64"},
+          {"name": "bump", "type": "u8"}
+        ]
+      }
+    },
+    {
+      "name": "Entry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {"name": "recipe_book", "type": "pubkey"},
+          {"name": "index", "type": "u64"},
+          {"name": "repo", "type": "string"},
+          {"name": "commit", "type": "string"},
+          {"name": "build_hash", "type": {"array": ["u8", 32]}},
+          {"name": "buffer", "type": "pubkey"},
+          {"name": "deployer", "type": "pubkey"},
+          {"name": "timestamp", "type": "i64"},
+          {"name": "bump", "type": "u8"}
+        ]
+      }
+    }
+  ]
+}

@@ -2,17 +2,16 @@
  * Connection factory for Cookie Chain / Solana-compatible clusters.
  *
  * Exports helpers that resolve the active cluster from global config
- * and create RPC connections using @solana/web3.js v2.
+ * and create classic @solana/web3.js v1 connections.
  */
-import { createSolanaRpc } from "@solana/web3.js";
+import { Connection } from "@solana/web3.js";
 import { readGlobalConfig } from "../config/index.js";
 import { CLUSTERS, clusterExists } from "../clusters/index.js";
 import type { ActiveCluster } from "../config/types.js";
 
 const DEFAULT_CLUSTER_NAME = "cookie";
 
-/** Return type of createSolanaRpc – inferred so we stay decoupled from internals. */
-export type SolanaRpc = ReturnType<typeof createSolanaRpc>;
+export type SolanaRpc = Connection;
 
 /**
  * Returns the currently active cluster from the global config.
@@ -53,5 +52,5 @@ export function getConnection(clusterOverride?: string): SolanaRpc {
     rpcUrl = active.rpcUrl;
   }
 
-  return createSolanaRpc(rpcUrl);
+  return new Connection(rpcUrl, "confirmed");
 }

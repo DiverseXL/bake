@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "declaration": false,
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": false,
+    "esModuleInterop": false,
+    "resolveJsonModule": false,
+    "skipLibCheck": true,
+    "lib": ["ES2022"],
+    "types": ["mocha", "node"],
+    "importHelpers": false
+  }
+}

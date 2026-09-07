@@ -17,23 +17,19 @@ function isValidUrl(s: string): boolean {
  * Attempt to call getSlot() on an RPC endpoint with a timeout.
  * Returns the slot number or `null` if unreachable / error.
  */
-async function probeSlot(rpcUrl: string): Promise<bigint | null> {
+async function probeSlot(rpcUrl: string): Promise<number | null> {
   try {
-    const rpc = createSolanaRpc(rpcUrl);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    // @solana/web3.js v2: getSlot() returns a plan; call .send({ abortSignal })
-    const slot = await rpc.getSlot().send({ abortSignal: controller.signal });
-    clearTimeout(timer);
-    return slot;
+    const connection = getConnection(rpcUrl);
+    return await Promise.race([
+      connection.getSlot("confirmed"),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("RPC probe timed out")), TIMEOUT_MS),
+      ),
+    ]);
   } catch {
     return null;
   }
 }
-
-// Lazy import to keep module-level side effects minimal
-import { createSolanaRpc } from "@solana/web3.js";
 
 interface UseResult {
   cluster: string;

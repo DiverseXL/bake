@@ -2,49 +2,13 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
 import { ed25519 } from "@noble/curves/ed25519";
-import { createKeyPairFromBytes, getBase58Decoder } from "@solana/web3.js";
-import {
-  readGlobalConfig,
-  writeGlobalConfig,
-  ensureGlobalConfigDir,
-  getGlobalConfigDir,
-} from "../config/index.js";
+import { Keypair } from "@solana/web3.js";
+import { readGlobalConfig, writeGlobalConfig } from "../config/index.js";
 import { logger } from "../lib/logger.js";
 import { fail } from "../lib/errors.js";
 import { connectNightly } from "../lib/nightly.js";
-
-// ---------------------------------------------------------------------------
-// Keyfile helpers
-// ---------------------------------------------------------------------------
-
-/** Standard Solana CLI keypair location. */
-const SOLANA_CLI_KEYPATH = join(homedir(), ".config", "solana", "id.json");
-/** Bake-specific fallback keypair location. */
-const BAKE_KEYPATH = join(getGlobalConfigDir(), "keypair.json");
-
-/**
- * Attempt to resolve an existing keypair file path, in priority order:
- *   1. walletPath stored in global config
- *   2. ~/.config/solana/id.json  (standard Solana CLI location)
- *   3. ~/.bake/keypair.json      (bake-specific fallback)
- *
- * Returns the resolved path or `null` if none found.
- */
-function resolveExistingKeypairPath(): string | null {
-  const cfg = readGlobalConfig();
-  const candidates = [
-    cfg?.walletPath,
-    SOLANA_CLI_KEYPATH,
-    BAKE_KEYPATH,
-  ].filter((p): p is string => typeof p === "string" && p.length > 0);
-
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
+import { BAKE_KEYPATH, resolveWalletPath } from "../lib/wallet.js";
 
 /**
  * Load a 64-byte keypair file (JSON array of numbers) and return the
@@ -56,10 +20,7 @@ async function loadPublicKeyFromFile(path: string): Promise<string> {
   if (bytes.length !== 64) {
     fail(`Keypair file at ${path} is not 64 bytes (got ${bytes.length}).`);
   }
-  const kp = await createKeyPairFromBytes(bytes);
-  const pubRaw = await crypto.subtle.exportKey("raw", kp.publicKey);
-  const b58 = getBase58Decoder();
-  return b58.decode(new Uint8Array(pubRaw));
+  return Keypair.fromSecretKey(bytes).publicKey.toBase58();
 }
 
 /**
@@ -141,7 +102,7 @@ async function runLogin(opts: { wallet?: string }): Promise<void> {
   }
 
   // --- Default local keypair path -------------------------------------
-  const existingPath = resolveExistingKeypairPath();
+  const existingPath = resolveWalletPath();
   let walletPath: string;
   let publicKey: string;
   let created = false;
