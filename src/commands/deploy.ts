@@ -18,6 +18,11 @@ import {
   resolveProgramIdFromAnchorProject,
   resolveProgramName,
 } from "../lib/anchorProject.js";
+import {
+  runAnchorBuild,
+  runToolchainCommand,
+  type ToolchainResult,
+} from "../lib/toolchain.js";
 
 const MAX_REPO_LEN = 200;
 const MAX_COMMIT_LEN = 44;
@@ -99,30 +104,16 @@ function runCommand(
   });
 }
 
-function displayCommand(command: string, args: string[]): string {
-  return [command, ...args].join(" ");
+function toToolResult(result: ToolchainResult): ToolResult {
+  return {
+    code: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
 
-async function runRequired(
-  command: string,
-  args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
-): Promise<ToolResult> {
-  const label = displayCommand(command, args);
-  let result: ToolResult;
-  try {
-    result = await runCommand(command, args, options);
-  } catch (err) {
-    if (err instanceof ToolError) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new ToolError(label, { code: 1, stdout: "", stderr: msg }, err instanceof Error ? err : undefined);
-  }
-  if (result.code !== 0) {
-    throw new ToolError(label, result);
-  }
-  return result;
+function displayCommand(command: string, args: string[]): string {
+  return [command, ...args].join(" ");
 }
 
 type StepHandle = {
@@ -212,7 +203,9 @@ interface DeployJson {
 }
 
 async function runDeploy(): Promise<void> {
-  const cwd = process.cwd();
+  const cwd = existsSync(join(process.cwd(), "Anchor.toml"))
+    ? process.cwd()
+    : join(process.cwd(), "anchor");
   const tomlPath = join(cwd, "Anchor.toml");
   if (!existsSync(tomlPath)) {
     fail("No Anchor.toml found — run this from your program's root directory.");
@@ -225,7 +218,10 @@ async function runDeploy(): Promise<void> {
   // a. anchor build
   const buildStep = startStep(`Building ${programName} (anchor build)`);
   try {
-    await runRequired("anchor", ["build"], { cwd });
+    const result = toToolResult(await runAnchorBuild(cwd));
+    if (result.code !== 0) {
+      throw new ToolError("anchor build --no-idl --arch v0 --tools-version v1.57", result);
+    }
     buildStep.succeed(`Built ${programName}`);
   } catch (err) {
     buildStep.fail(`Build failed for ${programName}`);
@@ -259,13 +255,16 @@ async function runDeploy(): Promise<void> {
   const deployStep = startStep(`Deploying ${programName} to ${cluster.name}`);
   let chainSignature: string | null = null;
   try {
-    const result = await runRequired("anchor", ["deploy"], {
+    const result = toToolResult(await runToolchainCommand("anchor", ["deploy"], {
       cwd,
       env: {
         ANCHOR_PROVIDER_URL: cluster.rpcUrl,
         ANCHOR_WALLET: walletPath,
       },
-    });
+    }));
+    if (result.code !== 0) {
+      throw new ToolError("anchor deploy", result);
+    }
     chainSignature = parseDeploySignature(`${result.stdout}\n${result.stderr}`);
     deployStep.succeed(`Deployed ${programName} to ${cluster.name}`);
   } catch (err) {

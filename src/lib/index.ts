@@ -15,6 +15,12 @@ export {
   resolveProgramIdFromAnchorProject,
   resolveProgramName,
 } from "./anchorProject.js";
+export {
+  checkWslToolchain,
+  runAnchorBuild,
+  runToolchainCommand,
+  windowsPathToWsl,
+} from "./toolchain.js";
 export type {
   RecipeBookClient,
   RecipeBookEntry,
