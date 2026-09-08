@@ -112,7 +112,10 @@ async function runRollback(entryIndexArg?: number): Promise<RollbackResult> {
   const entriesStep = startStep("Fetching Recipe Book entries");
   let entries: RecipeBookEntry[];
   try {
-    entries = await client.getEntries(programId);
+    const raw = await client.getEntries(programId);
+    // Anchor's getAccounts may return entries in unpredictable order;
+    // sort by on-chain index so array position matches entry index.
+    entries = raw.sort((a, b) => a.index - b.index);
     entriesStep.succeed(`Found ${entries.length} deploy(s) in Recipe Book`);
   } catch (err) {
     entriesStep.fail("Failed to fetch Recipe Book entries");
