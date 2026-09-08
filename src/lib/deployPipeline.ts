@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getActiveCluster } from "./connection.js";
+import { PublicKey } from "@solana/web3.js";
+import { getActiveCluster, getConnection } from "./connection.js";
 import { getWalletPath, loadLocalWallet } from "./wallet.js";
 import { getRecipeBookClient, isMockRecipeBookClient } from "./recipeBook.js";
 import {
@@ -11,6 +12,14 @@ import {
 import { runAnchorBuild, runToolchainCommand } from "./toolchain.js";
 import { getCurrentCommit, getGitRemote } from "./git.js";
 import { logger } from "./logger.js";
+
+/** BPFLoaderUpgradeab1e — the upgradeable BPF loader all Anchor programs use. */
+const BPF_LOADER_UPGRADEABLE = new PublicKey(
+  "BPFLoaderUpgradeab1e11111111111111111111111",
+);
+
+/** Number of metadata bytes at the start of a ProgramData account. */
+const PROGRAM_DATA_HEADER_BYTES = 44;
 
 export interface DeployPipelineResult {
   programId: ReturnType<typeof resolveProgramIdFromAnchorProject> extends infer T
@@ -101,4 +110,51 @@ export async function runDeployPipeline(cwd: string): Promise<DeployPipelineResu
     commit,
     repo,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers used by deploy, rollback, and prove
+// ---------------------------------------------------------------------------
+
+/** Convert a Uint8Array to a lowercase hex string. */
+export function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Hash a .so file with sha256 and return the hex-encoded digest. */
+export function hashFile(soPath: string): string {
+  const bytes = readFileSync(soPath);
+  return bytesToHex(new Uint8Array(createHash("sha256").update(bytes).digest()));
+}
+
+/**
+ * Fetch the currently deployed on-chain bytecode for `programId` and return
+ * its sha256 hash as a hex string.
+ *
+ * For upgradeable BPF programs the executable bytecode lives in a separate
+ * ProgramData account (a PDA derived from the program ID). The first 44 bytes
+ * of that account are metadata (slot + upgrade-authority COption), which we
+ * skip before hashing.
+ */
+export async function fetchOnChainBytecodeHash(
+  programId: PublicKey,
+): Promise<string> {
+  const connection = getConnection();
+  const [programDataAddress] = PublicKey.findProgramAddressSync(
+    [programId.toBuffer()],
+    BPF_LOADER_UPGRADEABLE,
+  );
+  const accountInfo = await connection.getAccountInfo(programDataAddress);
+  if (!accountInfo) {
+    throw new Error(
+      `ProgramData account not found for ${programId.toBase58()}. ` +
+        "Is the program deployed and upgradeable?",
+    );
+  }
+  const bytecode = accountInfo.data.subarray(PROGRAM_DATA_HEADER_BYTES);
+  return bytesToHex(
+    new Uint8Array(createHash("sha256").update(bytecode).digest()),
+  );
 }
