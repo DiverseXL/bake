@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { Connection, PublicKey } from "@solana/web3.js";
-import type { Idl } from "@coral-xyz/anchor";
 import { fail } from "../lib/errors.js";
 import { getActiveCluster, getConnection } from "../lib/connection.js";
 import { resolveProgramIdFromAnchorProject } from "../lib/anchorProject.js";
+import { getIdlForProgram, decodeInstruction } from "../lib/idlRegistry.js";
 
 const DEFAULT_LIMIT = 10;
 
@@ -14,25 +14,73 @@ export interface DecodedLogLine {
 }
 
 /**
- * Basic Anchor log parsing. Event data needs the program's IDL to decode;
- * arbitrary or third-party programs may not publish one. Keep this boundary
- * so an IDL-based decoder can be added without changing command output flow.
+ * Parse an Anchor log line. When a program ID is provided and the IDL is
+ * available in the registry, "Program data:" lines are decoded into
+ * structured instruction data rather than shown as raw base64.
  */
-export function decodeLogLine(line: string, _idl?: Idl): DecodedLogLine {
+export function decodeLogLine(line: string, programId?: PublicKey): DecodedLogLine {
   const trimmed = line.trim();
   if (trimmed.startsWith("Program log:")) {
     return { text: trimmed.slice("Program log:".length).trim(), kind: "log" };
   }
   if (trimmed.startsWith("Program data:")) {
+    const b64 = trimmed.slice("Program data:".length).trim();
+
+    // Attempt real decoding if we know the program and its IDL
+    if (programId) {
+      const idl = getIdlForProgram(programId);
+      if (idl) {
+        try {
+          const dataHex = Buffer.from(b64, "base64").toString("hex");
+          const decoded = decodeInstruction(idl, dataHex);
+          if (decoded) {
+            const argsStr = Object.entries(decoded.args)
+              .map(([k, v]) => `${k}=${formatDataValue(v)}`)
+              .join(", ");
+            return {
+              text: `[data] ${decoded.name}(${argsStr})`,
+              kind: "data",
+            };
+          }
+        } catch {
+          // Fall through to raw display
+        }
+      }
+    }
+
     return {
-      text: `[data] ${trimmed.slice("Program data:".length).trim()}`,
+      text: `[data] ${b64}`,
       kind: "data",
     };
   }
   return { text: trimmed, kind: "other" };
 }
 
-interface LogTransaction {
+function formatDataValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  // Handle BN (BigNumber) from Anchor
+  if (typeof value === "object" && value !== null && typeof (value as { toNumber?: () => number }).toNumber === "function") {
+    try {
+      return String((value as { toNumber: () => number }).toNumber());
+    } catch {
+      return String((value as { toString: () => string }).toString());
+    }
+  }
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (value instanceof PublicKey) return value.toBase58();
+  if (Array.isArray(value)) {
+    if (value.length === 32 && value.every((b: unknown) => typeof b === "number")) {
+      return value.map((b: number) => b.toString(16).padStart(2, "0")).join("");
+    }
+    return `[${value.length} bytes]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+  return String(value);
+}
+
+export interface LogTransaction {
   signature: string;
   timestamp: number | null;
   logs: string[];
@@ -79,6 +127,13 @@ function printTransaction(transaction: LogTransaction): void {
   for (const log of transaction.logs) console.log(formatLogText(log));
 }
 
+export async function fetchProgramLogHistory(
+  programId: PublicKey,
+  limit: number,
+): Promise<LogTransaction[]> {
+  return fetchHistory(programId, limit);
+}
+
 async function fetchHistory(
   programId: PublicKey,
   limit: number,
@@ -100,7 +155,7 @@ async function fetchHistory(
     transactions.push({
       signature: signatureInfo.signature,
       timestamp: transaction?.blockTime ?? signatureInfo.blockTime ?? null,
-      logs: rawLogs.map((line) => decodeLogLine(line).text),
+      logs: rawLogs.map((line) => decodeLogLine(line, programId).text),
     });
   }
   return transactions;
@@ -130,7 +185,7 @@ async function followLogs(programId: PublicKey, clusterName: string): Promise<vo
             const transaction: LogTransaction = {
               signature: event.signature,
               timestamp: null,
-              logs: (event.logs ?? []).map((line) => decodeLogLine(line).text),
+              logs: (event.logs ?? []).map((line) => decodeLogLine(line, programId).text),
             };
             if (isJsonMode()) {
               // Follow mode is unbounded, so JSON is newline-delimited objects.

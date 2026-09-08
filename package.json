@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@nightlylabs/nightly-connect-solana": "^0.0.32",
     "@solana/web3.js": "1.98.0",
     "@types/qrcode": "^1.5.6",

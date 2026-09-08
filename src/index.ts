@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { loadConfigs } from "./config/index.js";
+import { printBanner } from "./lib/banner.js";
 import {
   initCommand,
   loginCommand,
@@ -80,4 +81,6 @@ program.action(async () => {
   // If no subcommand was matched, commander prints help automatically.
 });
 
+// Before any command logic. printBanner() no-ops on --ci/--json and non-TTY.
+printBanner();
 program.parse(process.argv);

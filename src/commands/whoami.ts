@@ -48,6 +48,10 @@ async function runWhoami(): Promise<void> {
 
 export const whoamiCommand = new Command("whoami")
   .description("Show active wallet and cluster info")
-  .action(async () => {
+  .option("--json", "output results as JSON")
+  .option("--ci", "disable spinners/colors, force JSON-safe output")
+  .action(async (opts) => {
+    if (opts.json) process.env.BAKE_JSON = "true";
+    if (opts.ci) process.env.BAKE_CI = "true";
     await runWhoami();
   });
