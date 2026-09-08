@@ -21,6 +21,14 @@ export {
   runToolchainCommand,
   windowsPathToWsl,
 } from "./toolchain.js";
+export {
+  checkoutCommit,
+  commitExists,
+  getCurrentBranch,
+  getCurrentCommit,
+  isGitClean,
+  restoreGitState,
+} from "./git.js";
 export type {
   RecipeBookClient,
   RecipeBookEntry,

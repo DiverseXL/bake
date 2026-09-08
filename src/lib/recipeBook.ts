@@ -169,6 +169,10 @@ class RealRecipeBookClient implements RecipeBookClient {
       .initializeRecipeBook(programId)
       .accounts({ authority: authority.publicKey, recipeBook })
       .rpc();
+    // Wait for the transaction to be confirmed before returning, so the
+    // account is visible to subsequent reads (e.g. registerDeploy).
+    const connection = getConnection();
+    await connection.confirmTransaction(signature, "confirmed");
     return { signature };
   }
 
@@ -202,7 +206,11 @@ class RealRecipeBookClient implements RecipeBookClient {
         entry,
       })
       .rpc();
-      return { signature, entryIndex: book.entryCount.toNumber() };
+    // Wait for the transaction to be confirmed so the entry is visible to
+    // subsequent reads (e.g. getEntries in rollback).
+    const connection = getConnection();
+    await connection.confirmTransaction(signature, "confirmed");
+    return { signature, entryIndex: book.entryCount.toNumber() };
   }
 
   async getEntries(programId: PublicKey): Promise<RecipeBookEntry[]> {
