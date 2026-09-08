@@ -242,7 +242,7 @@ export const rollbackCommand = new Command("rollback")
   .argument("[entryIndex]", "Recipe Book entry index to roll back to (default: undo last deploy)")
   .option("--json", "output results as JSON")
   .option("--ci", "disable spinners/colors, force JSON-safe output")
-  .option("--yes, -y", "skip confirmation prompt")
+  .option("--yes", "skip confirmation prompt")
   .action(async (entryIndexArg: string | undefined, opts: { json?: boolean; ci?: boolean; yes?: boolean }) => {
     if (opts.json) process.env.BAKE_JSON = "true";
     if (opts.ci) process.env.BAKE_CI = "true";
