@@ -159,9 +159,11 @@ export async function runToolchainCommand(
 export function runAnchorBuild(cwd: string): Promise<ToolchainResult> {
   // SBPF v3 artifacts are rejected by this project's solana-test-validator;
   // v0 is the compatible target discovered during toolchain debugging.
+  // IDL generation is intentionally enabled: anchor-lang 1.2.0's idl-build
+  // path now completes successfully and the generated IDL was live-validated.
   return runToolchainCommand(
     "anchor",
-    ["build", "--no-idl", "--arch", "v0", "--tools-version", "v1.57"],
+    ["build", "--arch", "v0", "--tools-version", "v1.57"],
     { cwd },
   );
 }
