@@ -54,9 +54,7 @@ export async function runDeployPipeline(cwd: string): Promise<DeployPipelineResu
   }
   const programName = resolveProgramName(cwd, readFileSync(tomlPath, "utf8"));
   logger.info(`Building ${programName} (anchor build)`);
-  console.log(`[debug] anchor build cwd=${cwd}`);
   await runToolchainOrThrow("anchor", ["build", "--arch", "v0", "--tools-version", "v1.57"], cwd);
-  console.log(`[debug] anchor build succeeded`);
 
   const keypairPath = join(cwd, "target", "deploy", `${programName}-keypair.json`);
   const soPath = join(cwd, "target", "deploy", `${programName}.so`);
@@ -72,12 +70,10 @@ export async function runDeployPipeline(cwd: string): Promise<DeployPipelineResu
   const wallet = loadLocalWallet();
   const walletPath = getWalletPath();
   logger.info(`Deploying ${programName} to ${cluster.name}`);
-  console.log(`[debug] anchor deploy cwd=${cwd}, walletPath=${walletPath}`);
   const deploy = await runToolchainOrThrow("anchor", ["deploy"], cwd, {
     ANCHOR_PROVIDER_URL: cluster.rpcUrl,
     ANCHOR_WALLET: walletPath,
   });
-  console.log(`[debug] anchor deploy succeeded, stdout length=${deploy.stdout.length}`);
   const chainSignature = parseSignature(`${deploy.stdout}\n${deploy.stderr}`);
 
   const buildHash = new Uint8Array(
@@ -87,16 +83,9 @@ export async function runDeployPipeline(cwd: string): Promise<DeployPipelineResu
   const repo = (await getGitRemote(cwd)).slice(0, 200);
   const client = getRecipeBookClient();
   const mock = isMockRecipeBookClient(client);
-  console.log(`[debug] programId=${programId.toBase58()}, cluster=${cluster.rpcUrl}`);
-  console.log(`[debug] checking recipeBookExists...`);
-  const bookExists = await client.recipeBookExists(programId);
-  console.log(`[debug] recipeBookExists=${bookExists}`);
-  if (!bookExists) {
-    console.log(`[debug] initializing recipe book...`);
+  if (!(await client.recipeBookExists(programId))) {
     await client.initializeRecipeBook(programId, wallet);
-    console.log(`[debug] recipe book initialized`);
   }
-  console.log(`[debug] registering deploy...`);
   const registered = await client.registerDeploy(
     programId,
     { repo, commit: commit.slice(0, 44), buildHash, buffer: programId },
