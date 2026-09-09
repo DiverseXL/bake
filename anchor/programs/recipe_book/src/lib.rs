@@ -38,3 +38,4 @@ pub mod recipe_book {
 // second trivial change
 // third trivial change
 // deliberate mismatch test
+// cosmetic comment change for diff --rebuild verification
