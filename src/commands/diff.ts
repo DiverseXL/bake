@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fail } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
@@ -13,6 +13,7 @@ import {
 } from "../lib/deployPipeline.js";
 import { runAnchorBuild } from "../lib/toolchain.js";
 import { getCurrentCommit, commitExists, isGitClean } from "../lib/git.js";
+import { resolveProgramName } from "../lib/anchorProject.js";
 import { spawn } from "node:child_process";
 
 // ---------------------------------------------------------------------------
@@ -160,8 +161,9 @@ async function runDiff(
       );
     }
 
-    const programName = programId.toBase58();
-    const soPath = join(cwd, "target", "deploy", `${programName}.so`);
+    const tomlContent = readFileSync(join(cwd, "Anchor.toml"), "utf8");
+    const soProgramName = resolveProgramName(cwd, tomlContent);
+    const soPath = join(cwd, "target", "deploy", `${soProgramName}.so`);
 
     if (!existsSync(soPath)) {
       fail(

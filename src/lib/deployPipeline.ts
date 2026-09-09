@@ -18,8 +18,11 @@ const BPF_LOADER_UPGRADEABLE = new PublicKey(
   "BPFLoaderUpgradeab1e11111111111111111111111",
 );
 
-/** Number of metadata bytes at the start of a ProgramData account. */
-const PROGRAM_DATA_HEADER_BYTES = 44;
+/** Number of metadata bytes at the start of a ProgramData account.
+ *  Layout: 8-byte slot + 4-byte COption(u32) + 32-byte pubkey + 1-byte padding = 45.
+ *  Verified empirically against live ProgramData accounts (44 causes a 1-byte
+ *  offset that breaks hash comparison). */
+const PROGRAM_DATA_HEADER_BYTES = 45;
 
 export interface DeployPipelineResult {
   programId: ReturnType<typeof resolveProgramIdFromAnchorProject> extends infer T
