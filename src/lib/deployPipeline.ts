@@ -137,9 +137,14 @@ export function hashFile(soPath: string): string {
  * its sha256 hash as a hex string.
  *
  * For upgradeable BPF programs the executable bytecode lives in a separate
- * ProgramData account (a PDA derived from the program ID). The first 44 bytes
- * of that account are metadata (slot + upgrade-authority COption), which we
- * skip before hashing.
+ * ProgramData account (a PDA derived from the program ID). The first 45 bytes
+ * of that account are metadata (slot + upgrade-authority COption + padding),
+ * which we skip before hashing.
+ *
+ * The BPF loader pads the bytecode to a 16-byte alignment boundary. To hash
+ * only the actual ELF binary (matching what `anchor build` produces), we read
+ * the ELF header's section-header table offset (e_shoff) and count (e_shnum)
+ * to compute the true end of the binary, then hash exactly that many bytes.
  */
 export async function fetchOnChainBytecodeHash(
   programId: PublicKey,
@@ -156,7 +161,19 @@ export async function fetchOnChainBytecodeHash(
         "Is the program deployed and upgradeable?",
     );
   }
-  const bytecode = accountInfo.data.subarray(PROGRAM_DATA_HEADER_BYTES);
+  const data = accountInfo.data;
+  const elfStart = PROGRAM_DATA_HEADER_BYTES;
+
+  // Parse ELF64 header to find the real binary size.
+  // e_shoff (offset 40, u64le): file offset of section header table
+  // e_shentsize (offset 58, u16le): size of each section header entry
+  // e_shnum (offset 60, u16le): number of section header entries
+  const e_shoff = Number(data.readBigUInt64LE(elfStart + 40));
+  const e_shentsize = data.readUInt16LE(elfStart + 58);
+  const e_shnum = data.readUInt16LE(elfStart + 60);
+  const elfSize = e_shoff + e_shentsize * e_shnum;
+
+  const bytecode = data.subarray(elfStart, elfStart + elfSize);
   return bytesToHex(
     new Uint8Array(createHash("sha256").update(bytecode).digest()),
   );
