@@ -67,7 +67,9 @@ export function readGlobalConfig(): MergedConfig | null {
     const raw = readFileSync(GLOBAL_CONFIG_PATH, "utf-8");
     const parsed = JSON.parse(raw);
     return globalConfigSchema.parse(parsed);
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Warning: ignoring corrupted global config (${GLOBAL_CONFIG_PATH}): ${msg}`);
     return null;
   }
 }
@@ -86,7 +88,9 @@ export function readProjectConfig(): MergedConfig | null {
     const raw = readFileSync(path, "utf-8");
     const parsed = JSON.parse(raw);
     return projectConfigSchema.parse(parsed);
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Warning: ignoring corrupted project config (${path}): ${msg}`);
     return null;
   }
 }

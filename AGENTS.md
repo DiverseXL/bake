@@ -148,10 +148,13 @@ src/
     mcp.ts                 — stdio MCP server entry (policy load + startBakeMcpServer)
     diff.ts               — source + optional bytecode diff against Recipe Book entry (read-only)
     decode.ts              — transaction/account/log decoding via Anchor IDLs (uses idlRegistry.ts)
-    top.ts, fork.ts        — STUBs (not yet implemented)
+    fork.ts               — clone a program + accounts from a source cluster into local validator
+    top.ts                — STUB (not yet implemented)
   lib/
     connection.ts          — getConnection()/getActiveCluster(), v1 @solana/web3.js ONLY (see 3.1)
-    toolchain.ts            — cross-platform Anchor/Solana subprocess runner (Section 2.3)
+    toolchain.ts            — cross-platform Anchor/Solana subprocess runner (Section 2.3);
+                              runToolchainCommand (buffered), spawnToolchainForeground (live streaming
+                              for long-running processes like solana-test-validator)
     deployPipeline.ts        — THE ONE build/deploy/hash/register implementation (Section 2.6)
     rollbackPipeline.ts      — THE ONE rollback implementation (checkout → deployPipeline → restore)
     recipeBook.ts             — RecipeBookClient interface, MockRecipeBookClient,
@@ -393,3 +396,78 @@ an **isolated child MCP process** for read-only token/liquidity lookups
 - **Node version gate**: Checks `node --version >= 22` before spawning.
   Fails with a clear message if the running Node is too old.
 - **Cleanup**: The child process is terminated when bake's MCP server exits.
+
+### 10.8 `bake fork` — clone a program into a local validator
+
+`bake fork <programId>` clones a real on-chain program (and optionally its
+accounts) from any source cluster into a fresh `solana-test-validator`, so
+you can rehearse changes against real state for free.
+
+**Source resolution**: `--source <cluster>` accepts a known preset name
+(`mainnet`, `devnet`, `cookie`) or a full RPC URL. Defaults to Solana
+mainnet (`https://api.mainnet-beta.solana.com`).
+
+**Pre-flight validation**: Before spawning the validator, the command:
+1. Resolves and validates the source RPC (sends `getGenesisHash`, fails
+   with a friendly error if unreachable/timed out).
+2. Optionally calls `getProgramAccounts` (opt-in via
+   `--fetch-program-accounts`) to clone a sample of the program's accounts.
+3. Prints a summary of what will be cloned, then spawns the validator in
+   the foreground with live stdout/stderr streaming.
+
+**`getProgramAccounts` caveat (KNOWN CONSTRAINT, not a bug)**:
+Free public Solana RPCs (`api.mainnet-beta.solana.com`) commonly reject
+or rate-limit `getProgramAccounts` calls. When this happens, `bake fork`
+prints a **warning** (not a fatal error) and falls back to cloning only
+the bare program + any explicitly listed `--accounts`. Do NOT "fix" this
+by retrying aggressively — a public RPC that rejects GPA will never allow
+it regardless of retries. The fix is either: (a) use a paid RPC provider
+via `--source <url>`, or (b) omit `--fetch-program-accounts` and list
+specific accounts manually via `--accounts`.
+
+**Foreground execution**: The validator runs as a foreground process with
+live-streamed output (via `spawnToolchainForeground` in toolchain.ts).
+It stays alive until the user presses Ctrl+C. On Windows, it is relayed
+through WSL (same as all other toolchain commands).
+
+**Port handling**: Defaults to port 8899. If the port is already in use
+(another validator is running), the command detects the non-zero exit and
+suggests `--port` or stopping the existing validator.
+
+**WSL2 resource exhaustion (KNOWN CONSTRAINT, not a bug)**:
+Repeated or rapid `bake fork` invocations (starting multiple validators
+in quick succession without cleanly stopping the previous one) can exhaust
+WSL2 memory/CPU resources and crash the WSL instance itself (observed
+during testing — WSL becomes unresponsive, `wsl --shutdown` required).
+Do NOT "fix" this by adding retry/resilience logic. The correct mitigation
+is: fully stop one fork's validator (Ctrl+C, confirm clean shutdown)
+before starting another. If WSL crashes, run `wsl --shutdown` from
+PowerShell, wait a few seconds, then restart.
+
+---
+
+## 11. Security audit backlog (2026-09-09)
+
+The following items were identified during a comprehensive security +
+error-handling audit. Critical/High items were fixed in-session; Medium/Low
+are backlog for future work.
+
+### Fixed
+
+| Finding | Severity | Fix |
+|---------|----------|-----|
+| `deploy.ts` had no confirmation prompt before on-chain deploy | HIGH | Added `--yes`/`--ci`/`--json` gating + interactive `y/N` prompt |
+| WSL relay env var key names not shell-quoted in `toolchain.ts` | MEDIUM | Quoted key via `shellQuote(key)` |
+| `readGlobalConfig()` / `readProjectConfig()` silently return `null` on corrupted JSON | LOW | Added stderr warning before returning null |
+
+### Backlog (Medium/Low)
+
+| Finding | Severity | Notes |
+|---------|----------|-------|
+| `prove.ts --rebuild` has no confirmation prompt before git checkout | LOW | Mitigated by clean-tree requirement + `finally` restore |
+| `config.json` written without `chmod 0o600` (unlike keypair.json) | LOW | Low risk on single-user machines |
+| `writeGlobalConfig()` uses non-atomic `writeFileSync` | LOW | Single-user CLI; unsafe only in concurrent CI |
+| No pre-flight RPC check in `bake deploy` | LOW | User waits for full build to fail if RPC is down |
+| No pre-flight balance check before deploy/rollback | LOW | Raw Solana CLI error shown; could be friendlier |
+| `cookieMcpClient.ts` hardcodes `CLUSTERS.cookie.endpoint` | LOW | Ignores user's active cluster |
+| `npm audit` — `bigint-buffer` (high), `toml` (high), `uuid` (moderate), `stream-json` (moderate) | LOW | Transitive deps via `@solana/web3.js` + `@coral-xyz/anchor`; no fix without major version bump |
