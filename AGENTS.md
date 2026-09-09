@@ -444,6 +444,58 @@ is: fully stop one fork's validator (Ctrl+C, confirm clean shutdown)
 before starting another. If WSL crashes, run `wsl --shutdown` from
 PowerShell, wait a few seconds, then restart.
 
+### 10.9 Docker toolchain (`bake-toolchain` image)
+
+A `Dockerfile` at the repo root packages the full, known-working
+Anchor/Solana toolchain into a container image. This is an **alternative to
+the WSL relay** for running Anchor commands directly — it does NOT replace
+bake's own WSL auto-relay for end-users running `bake deploy` on Windows.
+
+**Use cases:**
+- (a) Testing bake on machines without WSL set up (e.g. a friend's laptop)
+- (b) Reproducible CI-style builds
+- (c) Contributors who prefer not to install the toolchain natively
+
+**Pinned versions (do not change without re-verifying):**
+- Rust: 1.89.0 (base image `rust:1.89.0-slim-trixie` — matches the project's pinned toolchain in `anchor/rust-toolchain.toml`, so Anchor's host-side IDL generation needs no runtime rustup download. Trixie's glibc 2.41 is required: the anchor-cli prebuilt links against glibc >= 2.39 — bookworm's 2.36 fails with `GLIBC_2.39 not found`; do not downgrade)
+- Solana/Agave CLI: 3.1.10 (Anza installer, pinned URL)
+- Anchor CLI: 1.2.0 — downloaded as the PREBUILT release binary
+  (`anchor-1.2.0-x86_64-unknown-linux-gnu`) with a pinned sha256 check.
+  **Do NOT switch this back to avm**: avm has no prebuilt binary, so
+  installing it means compiling sigstore-verify → reqwest/rustls →
+  aws-lc-sys (BoringSSL) from source — 15-30 min per fresh image build, for
+  the identical artifact.  (It's also why the base was briefly rust:1.91.)
+- Node.js: 22.x (via NodeSource, satisfies cookie-mcp >=22 requirement)
+- Platform tools: v1.57 (pre-warmed during image build)
+- Dev wallet: `~/.config/solana/id.json` generated during build (Anchor.toml's provider wallet; funded by the local validator's faucet)
+
+**Pre-warm note:** `cargo-build-sbf --version` exits before any download, so the
+image pre-warms platform-tools by actually running `cargo-build-sbf
+--tools-version v1.57` on a throwaway empty cdylib crate during `docker
+build` — the real build invocation is what populates `~/.cache/solana/v1.57`.
+Do not "simplify" this back to `--version`; it silently stops pre-warming.
+
+**Run command:**
+```bash
+docker run --rm -v "${PWD}:/workspace" -w /workspace/anchor bake-toolchain \
+    anchor build --arch v0 --tools-version v1.57
+```
+
+Or via docker-compose:
+```bash
+docker compose run --rm toolchain anchor build --arch v0 --tools-version v1.57
+docker compose run --rm toolchain anchor test --validator legacy
+docker compose run --rm toolchain bash   # interactive shell
+```
+
+**Key design choices:**
+- The Anchor project directory is mounted as a volume, not COPYed — code
+  changes on the host are reflected immediately without rebuilding the image.
+- All tool paths are baked into the image's ENV — no `source ~/.cargo/env`
+  or profile-sourcing needed at container runtime.
+- Platform-tools v1.57 is pre-warmed during `docker build` so the first
+  `anchor build` in the container doesn't trigger a network download.
+
 ---
 
 ## 11. Security audit backlog (2026-09-09)

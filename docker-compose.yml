@@ -1,0 +1,21 @@
+# docker-compose.yml — convenience wrapper for the bake-toolchain image.
+#
+# Usage:
+#   docker compose run --rm toolchain anchor build --arch v0 --tools-version v1.57
+#   docker compose run --rm toolchain anchor test --validator legacy
+#   docker compose run --rm toolchain bash   # interactive shell
+#
+# The Anchor project directory (anchor/) is mounted as /workspace so code
+# changes on the host are reflected immediately.
+
+services:
+  toolchain:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bake-toolchain
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/anchor
+    stdin_open: true
+    tty: true

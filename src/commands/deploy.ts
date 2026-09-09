@@ -3,6 +3,7 @@ import chalk from "chalk";
 import ora from "ora";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { performance } from "node:perf_hooks";
 import { fail } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
@@ -19,6 +20,20 @@ function isJsonMode(): boolean {
 
 function isCiMode(): boolean {
   return process.env.BAKE_CI === "true";
+}
+
+function isYesMode(): boolean {
+  return process.env.BAKE_YES === "true";
+}
+
+async function promptYesNo(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(chalk.bold(question) + " (y/N) ", (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === "y");
+    });
+  });
 }
 
 function formatElapsed(ms: number): string {
@@ -74,6 +89,15 @@ async function runDeploy(): Promise<void> {
   const started = performance.now();
   const cluster = getActiveCluster();
 
+  if (!isCiMode() && !isJsonMode() && !isYesMode()) {
+    logger.info(`\n  Cluster:  ${cluster.name} (${chalk.dim(cluster.rpcUrl)})`);
+    const ok = await promptYesNo("\nDeploy to this cluster?");
+    if (!ok) {
+      logger.warn("Deploy cancelled.");
+      process.exit(0);
+    }
+  }
+
   // Delegate the full build→deploy→hash→register pipeline to the shared
   // function. This is the same function bake rollback calls — both commands
   // share exactly one implementation of the deploy sequence.
@@ -128,8 +152,10 @@ export const deployCommand = new Command("deploy")
   .description("Deploy an Anchor program to the active cluster")
   .option("--json", "output results as JSON")
   .option("--ci", "disable spinners/colors, force JSON-safe output")
-  .action(async (opts: { json?: boolean; ci?: boolean }) => {
+  .option("--yes, -y", "skip confirmation prompt")
+  .action(async (opts: { json?: boolean; ci?: boolean; yes?: boolean }) => {
     if (opts.json) process.env.BAKE_JSON = "true";
     if (opts.ci) process.env.BAKE_CI = "true";
+    if (opts.yes) process.env.BAKE_YES = "true";
     await runDeploy();
   });

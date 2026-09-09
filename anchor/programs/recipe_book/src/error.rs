@@ -8,6 +8,6 @@ pub enum RecipeBookError {
     #[msg("Signer is not the authority of this RecipeBook")]
     Unauthorized,
 
-    #[msg("String exceeds maximum allowed length for this field (mismatch test)")]
+    #[msg("String exceeds maximum allowed length for this field")]
     StringTooLong,
 }

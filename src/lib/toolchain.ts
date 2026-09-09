@@ -167,3 +167,93 @@ export function runAnchorBuild(cwd: string): Promise<ToolchainResult> {
     { cwd },
   );
 }
+
+/**
+ * Spawn a toolchain command as a foreground process with inherited stdio.
+ *
+ * Unlike runToolchainCommand (which buffers stdout/stderr and waits for
+ * completion), this streams the child's output directly to the user's
+ * terminal. Intended for long-running processes like solana-test-validator
+ * that must stay alive until the user presses Ctrl+C.
+ *
+ * Returns a promise that resolves when the child exits. The caller can
+ * inspect `code` and `signal` to distinguish clean shutdown from failure.
+ */
+export function spawnToolchainForeground(
+  command: string,
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<{ code: number | null; signal: string | null }> {
+  if (process.platform !== "win32") {
+    return new Promise((resolve) => {
+      const child = spawn(command, args, {
+        cwd: options.cwd,
+        env: { ...process.env, ...options.env },
+        stdio: "inherit",
+        shell: false,
+      });
+      child.on("error", (error) => {
+        console.error(`Failed to start ${command}: ${error.message}`);
+        resolve({ code: 1, signal: null });
+      });
+      child.on("close", (code, signal) => {
+        resolve({ code, signal });
+      });
+    });
+  }
+
+  // Windows: relay through WSL
+  return new Promise((resolve) => {
+    ensureWslToolchain()
+      .then(() => {
+        const wslPath = options.cwd ? windowsPathToWsl(options.cwd) : null;
+        const envExports = Object.entries(options.env ?? {})
+          .filter(([, value]) => value !== undefined)
+          .map(([key, value]) => {
+            const text = value as string;
+            const converted = /^[A-Za-z]:[\\/]/.test(text)
+              ? windowsPathToWsl(text)
+              : text;
+            return `export ${shellQuote(key)}=${shellQuote(converted)}`;
+          })
+          .join("; ");
+        const commandLine = [command, ...args.map(shellQuote)].join(" ");
+        const prelude = [
+          'source "$HOME/.cargo/env" 2>/dev/null',
+          'source "$HOME/.nvm/nvm.sh" 2>/dev/null',
+          'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"',
+          envExports,
+        ]
+          .filter(Boolean)
+          .join("; ");
+        const cdPart = wslPath ? `cd ${shellQuote(wslPath)} && ` : "";
+        const innerCommand = `${prelude}; ${cdPart}${commandLine}`;
+
+        console.error(
+          `[relayed via WSL] Windows detected; running ${command} in ${WSL_DISTRO}.`,
+        );
+        const child = spawn("wsl", [
+          "-d",
+          WSL_DISTRO,
+          "-e",
+          "bash",
+          "-lc",
+          innerCommand,
+        ], {
+          stdio: "inherit",
+          windowsHide: true,
+        });
+        child.on("error", (error) => {
+          console.error(`Failed to start WSL relay: ${error.message}`);
+          resolve({ code: 1, signal: null });
+        });
+        child.on("close", (code, signal) => {
+          resolve({ code, signal });
+        });
+      })
+      .catch((error) => {
+        console.error(error.message ?? String(error));
+        resolve({ code: 1, signal: null });
+      });
+  });
+}
