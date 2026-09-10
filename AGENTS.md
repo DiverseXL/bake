@@ -134,7 +134,10 @@ circuit breaker, stderr audit log). Implemented in `src/commands/mcp.ts`,
 src/
   index.ts              — entrypoint, registers commands, --ci/--json/-v global flags
   commands/
-    init.ts              — scaffold Anchor project via toolchain + Cookie Chain overlays
+    init.ts              — scaffold Anchor project via toolchain + Cookie Chain overlays;
+                            optional post-scaffold prompt installs @cookiechain/skill to
+                            ~/.claude/skills or ~/.cursor/skills (interactive TTY only,
+                            skipped in --ci/--json; see Section 12)
     login.ts             — local keypair (default) + Nightly Connect (--wallet nightly, for
                             high-stakes confirmations only, NOT default login path)
     use.ts                — cluster switching, v1 web3.js Connection-based reachability probe
@@ -172,7 +175,12 @@ src/
                                   or use --idl <path> at runtime for ad-hoc decoding)
     cookieMcpClient.ts            — lazy singleton client for cookie-mcp (see Section 10.7)
     git.ts                     — checkout/restore helpers, used by rollback and prove
-    wallet.ts                    — loadLocalWallet(), shared between login.ts and other commands
+    wallet.ts                    — loadLocalWallet() (async; prompts inline for first-run wallet
+                                    creation in interactive sessions when no wallet exists — gated
+                                    behind process.stdout.isTTY && !BAKE_CI && !BAKE_JSON; in
+                                    non-interactive/CI/JSON contexts falls back to the original
+                                    static error). createLocalWallet() is the shared key-generation
+                                    function used by both loadLocalWallet() and login.ts
     anchorProject.ts               — resolveProgramIdFromAnchorProject(), shared program-ID
                                     resolution logic
     banner.ts                      — cookie ASCII banner (skipped for mcp / --ci / --json / non-TTY)
@@ -268,6 +276,12 @@ Anchor directly, to keep the codebase consistent.
 - Mock escape hatches (`BAKE_MOCK_RECIPE_BOOK=1`) exist for testing
   command orchestration without touching a real chain — preserve this
   pattern for any new on-chain-dependent command.
+- Commands needing a wallet (`loadLocalWallet()`) prompt inline for
+  first-run creation when `process.stdout.isTTY && !BAKE_CI && !BAKE_JSON`.
+  In non-interactive/CI/JSON contexts, the original static error is thrown
+  unchanged — no interactive prompts in scripted contexts, ever.
+  `createLocalWallet()` in `wallet.ts` is the single shared implementation
+  used by both the inline prompt and `bake login`.
 
 ---
 
@@ -527,3 +541,27 @@ are backlog for future work.
 | No pre-flight balance check before deploy/rollback | LOW | Raw Solana CLI error shown; could be friendlier |
 | `cookieMcpClient.ts` hardcodes `CLUSTERS.cookie.endpoint` | LOW | Ignores user's active cluster |
 | `npm audit` — `bigint-buffer` (high), `toml` (high), `uuid` (moderate), `stream-json` (moderate) | LOW | Transitive deps via `@solana/web3.js` + `@coral-xyz/anchor`; no fix without major version bump |
+
+---
+
+## 12. `@cookiechain/skill` integration (optional, post-init)
+
+After `bake init` scaffolds a project, it optionally offers to install the
+official Cookie Chain agent skill (`@cookiechain/skill`) — a set of markdown
+files that teach AI coding assistants (Claude, Cursor) Cookie Chain facts
+(RPC URLs, COOK token model, bridge vaults, genesis program IDs).
+
+### Key constraints for future contributors
+
+- **`@cookiechain/skill` has NO programmatic exports.** It is a pure
+  filesystem copy of markdown instructions. Bake must **never** import
+  constants from it (COOK mint address, RPC URLs, program IDs, vault
+  addresses). Bake maintains its own constants independently (in
+  `src/clusters/`, `src/lib/cookieMcpClient.ts`, etc.).
+- **Writes only to `~/.claude/skills/` or `~/.cursor/skills/`** — never
+  into the project directory. Confirmed via package inspection.
+- The prompt is gated behind `process.stdout.isTTY === true && !BAKE_CI && !BAKE_JSON`.
+  In non-interactive/CI/JSON contexts, the install is skipped entirely.
+- The `npx @cookiechain/skill install` call uses `execFile` (pure Node, no
+  WSL relay needed). Failures are caught and printed as a one-line warning;
+  the scaffold itself is never affected.

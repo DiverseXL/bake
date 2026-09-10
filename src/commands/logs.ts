@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { fail } from "../lib/errors.js";
 import { getActiveCluster, getConnection } from "../lib/connection.js";
@@ -97,7 +99,10 @@ function isCiMode(): boolean {
 function resolveProgramAddress(programId?: string): PublicKey {
   try {
     if (programId) return new PublicKey(programId);
-    const resolved = resolveProgramIdFromAnchorProject();
+    const cwd = existsSync(join(process.cwd(), "Anchor.toml"))
+      ? process.cwd()
+      : join(process.cwd(), "anchor");
+    const resolved = resolveProgramIdFromAnchorProject(cwd);
     if (resolved) return resolved;
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err));

@@ -79,13 +79,24 @@ export async function runDeployPipeline(cwd: string): Promise<DeployPipelineResu
   }
 
   const cluster = getActiveCluster();
-  const wallet = loadLocalWallet();
+  const wallet = await loadLocalWallet();
   const walletPath = getWalletPath();
   logger.info(`Deploying ${programName} to ${cluster.name}`);
-  const deploy = await runToolchainOrThrow("anchor", ["deploy"], cwd, {
-    ANCHOR_PROVIDER_URL: cluster.rpcUrl,
-    ANCHOR_WALLET: walletPath,
-  });
+  const deploy = await runToolchainOrThrow(
+    "anchor",
+    [
+      "deploy",
+      "--provider.cluster",
+      cluster.rpcUrl,
+      "--provider.wallet",
+      walletPath,
+    ],
+    cwd,
+    {
+      ANCHOR_PROVIDER_URL: cluster.rpcUrl,
+      ANCHOR_WALLET: walletPath,
+    },
+  );
   const chainSignature = parseSignature(`${deploy.stdout}\n${deploy.stderr}`);
 
   const buildHash = new Uint8Array(

@@ -1,6 +1,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
+import { exec } from "node:child_process";
+import { createInterface } from "node:readline";
 import {
   existsSync,
   mkdirSync,
@@ -408,6 +410,56 @@ async function runInit(projectNameArg?: string): Promise<void> {
         ? `Next: cd ${projectNameArg}`
         : chalk.dim(`Next: cd ${projectNameArg}`),
     );
+  }
+
+  // --- Optional: install Cookie Chain agent skill (interactive only) ---
+  if (process.stdout.isTTY === true && !isCiMode() && !isJsonMode()) {
+    const rl = createInterface({ input: process.stdin, output: process.stderr });
+    const answer = await new Promise<string>((resolve) => {
+      rl.question(
+        chalk.bold(
+          "Also install the Cookie Chain agent skill for Claude/Cursor? [Y/n] ",
+        ) +
+          chalk.dim(
+            "\n  Teaches your AI coding agent Cookie Chain facts — writes only to ~/.claude/skills or ~/.cursor/skills, not this project.",
+          ) +
+          "\n  ",
+        (a) => {
+          rl.close();
+          resolve(a);
+        },
+      );
+    });
+
+    if (answer.trim() === "" || answer.trim().toLowerCase() === "y") {
+      const skillStep = startStep("Installing Cookie Chain agent skill");
+      try {
+        const result = await new Promise<{
+          stdout: string;
+          stderr: string;
+        }>((resolve, reject) => {
+          exec(
+            "npx @cookiechain/skill install",
+            { timeout: 60_000 },
+            (error, stdout, stderr) => {
+              if (error) reject(error);
+              else resolve({ stdout, stderr });
+            },
+          );
+        });
+        const output = (result.stdout + result.stderr).trim();
+        skillStep.succeed(
+          output || "Cookie Chain agent skill installed",
+        );
+        if (output) {
+          console.log(chalk.dim(`  ${output.replace(/\n/g, "\n  ")}`));
+        }
+      } catch (err) {
+        skillStep.fail("Skill install failed (project scaffold unaffected)");
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(chalk.dim(`  ${msg}`));
+      }
+    }
   }
 
   console.log();

@@ -34,7 +34,7 @@ ENV CARGO_HOME=/usr/local/cargo
 # System deps (keep the layer small)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates gcc g++ make pkg-config \
-        libssl-dev libudev-dev git xz-utils \
+        libssl-dev libudev-dev git xz-utils bzip2 \
     && rm -rf /var/lib/apt/lists/*
 
 # -- Node.js 22.x (cookie-mcp requires >= 22) ------------------------------
@@ -51,11 +51,18 @@ RUN cd /tmp && \
     node --version && \
     npm --version
 
-# -- Solana / Agave CLI 3.1.10 (pinned via the Anza installer) -------------
-#    Pinned URL, not the "stable" redirect — version drift is exactly what
-#    this image exists to prevent.  Non-interactive in Docker (no TTY).
-RUN curl -sSfL https://release.anza.xyz/v3.1.10/install | \
-    sh && \
+# -- Solana / Agave CLI 3.1.10 (pre-downloaded, no in-build network) -------
+#    Pre-downloaded on host from the same GitHub release the Anza installer
+#    fetches.  Avoids a 200MB+ download that consistently fails inside
+#    Docker's network (even with --network host).  Extracts to the same path
+#    the installer would use, plus creates the active_release symlink.
+COPY prewarm/solana-release-x86_64-unknown-linux-gnu.tar.bz2 /tmp/
+RUN mkdir -p /root/.local/share/solana/install/releases/3.1.10 && \
+    tar -xjf /tmp/solana-release-x86_64-unknown-linux-gnu.tar.bz2 \
+        -C /root/.local/share/solana/install/releases/3.1.10 && \
+    ln -sf /root/.local/share/solana/install/releases/3.1.10/solana-release \
+           /root/.local/share/solana/install/active_release && \
+    rm /tmp/solana-release-x86_64-unknown-linux-gnu.tar.bz2 && \
     /root/.local/share/solana/install/active_release/bin/solana --version
 
 # PATH is baked into the image ENV so every RUN and every container process
@@ -80,22 +87,18 @@ RUN curl -fsSL \
     rm /tmp/anchor && \
     anchor --version
 
-# -- Pre-warm platform-tools v1.57 (image-build time, not first run) -------
-#    Confirmed-working version from WSL debugging.  `cargo-build-sbf
-#    --version` prints the version and exits BEFORE any download happens, so
-#    pre-warming needs a real invocation with `--tools-version v1.57`.  We
-#    build a tiny throwaway cdylib crate — this downloads platform-tools
-#    v1.57 into ~/.cache/solana/v1.57, exactly the cache `anchor build
-#    --tools-version v1.57` reads at runtime.  The download is baked into
-#    this layer; a later container run does not need network for tools.
-#    Do not "simplify" this back to `--version`; it silently stops pre-warming.
-RUN mkdir -p /tmp/prewarm/src && cd /tmp/prewarm && \
-    printf '[package]\nname = "prewarm"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n' > Cargo.toml && \
-    printf '#[no_mangle]\npub extern "C" fn entrypoint() {}\n' > src/lib.rs && \
-    cargo-build-sbf --tools-version v1.57 && \
-    rm -rf /tmp/prewarm && \
-    test -d /root/.cache/solana/v1.57 && \
-    echo "platform-tools v1.57 pre-warmed into image layer"
+# -- Pre-warm platform-tools v1.52 (pre-downloaded, no in-build network) ----
+#    Pre-downloaded on host.  `cargo-build-sbf --tools-version v1.57`
+#    internally resolves to platform-tools v1.52 (confirmed via
+#    `cargo-build-sbf --version`).  The tarball extracts to ./ so the files
+#    land directly in the target directory.  Do not "simplify" this away —
+#    it's what prevents the 495MB download from failing inside Docker.
+COPY prewarm/platform-tools-linux-x86_64.tar.bz2 /tmp/
+RUN mkdir -p /root/.cache/solana/v1.52/platform-tools && \
+    tar -xjf /tmp/platform-tools-linux-x86_64.tar.bz2 \
+        -C /root/.cache/solana/v1.52/platform-tools && \
+    rm /tmp/platform-tools-linux-x86_64.tar.bz2 && \
+    echo "platform-tools v1.52 pre-warmed into image layer"
 
 # -- Default dev wallet -----------------------------------------------------
 #    Anchor.toml sets `wallet = "~/.config/solana/id.json"` — generate one
@@ -103,7 +106,7 @@ RUN mkdir -p /tmp/prewarm/src && cd /tmp/prewarm && \
 #    test validator's faucet funds it via anchor's automatic airdrop).
 RUN mkdir -p /root/.config/solana && \
     solana-keygen new --no-bip39-passphrase --silent --force \
-        /root/.config/solana/id.json
+        --outfile /root/.config/solana/id.json
 
 # -- Verify the full toolchain is on PATH with no extra sourcing -----------
 RUN echo "=== bake-toolchain versions ===" && \

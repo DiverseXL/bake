@@ -127,7 +127,10 @@ export async function runToolchainCommand(
       return `export ${key}=${shellQuote(converted)}`;
     })
     .join("; ");
-  const commandLine = [command, ...args.map(shellQuote)].join(" ");
+  const convertedArgs = args.map((arg) =>
+    /^[A-Za-z]:[\\/]/.test(arg) ? windowsPathToWsl(arg) : arg,
+  );
+  const commandLine = [command, ...convertedArgs.map(shellQuote)].join(" ");
   const prelude = [
     'source "$HOME/.cargo/env" 2>/dev/null',
     'source "$HOME/.nvm/nvm.sh" 2>/dev/null',

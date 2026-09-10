@@ -3,6 +3,7 @@ export { formatUserError, fail, BakeError } from "./errors.js";
 export { getConnection, getActiveCluster } from "./connection.js";
 export {
   loadLocalWallet,
+  createLocalWallet,
   getWalletPath,
   resolveWalletPath,
 } from "./wallet.js";
