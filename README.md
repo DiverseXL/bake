@@ -41,7 +41,11 @@ The package is published as `bakeacookie` (the shorter names were already taken)
 bake --help
 ```
 
-**Windows users:** bake needs a Solana/Anchor toolchain available via WSL for build/deploy commands. Run `bake doctor` after install to check your environment — see [REQUIREMENTS.md](./REQUIREMENTS.md) for full setup steps.
+**Windows users:** bake needs a Solana/Anchor toolchain available via WSL for build/deploy commands. Run `bake doctor` after install to check your environment.
+
+## Requirements
+
+Not every command needs the full toolchain — `bake login`, `bake use`, `bake whoami`, `bake stats`, `bake logs`, and `bake decode` work with just Node.js. For build/deploy commands you'll also need Rust, Solana CLI, and Anchor (or WSL on Windows). See [REQUIREMENTS.md](./REQUIREMENTS.md) for the full breakdown by use case.
 
 ## Quickstart
 
