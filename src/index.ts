@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { Command } from "commander";
 import chalk from "chalk";
 import { loadConfigs } from "./config/index.js";
@@ -17,6 +19,7 @@ import {
   topCommand,
   mcpCommand,
   whoamiCommand,
+  doctorCommand,
 } from "./commands/index.js";
 
 const VERSION = "0.1.0";
@@ -75,6 +78,7 @@ program.addCommand(decodeCommand);
 program.addCommand(topCommand);
 program.addCommand(mcpCommand);
 program.addCommand(whoamiCommand);
+program.addCommand(doctorCommand);
 
 program.action(async () => {
   await loadGlobalConfig();

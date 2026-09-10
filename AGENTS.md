@@ -149,6 +149,10 @@ src/
     diff.ts               — source + optional bytecode diff against Recipe Book entry (read-only)
     decode.ts              — transaction/account/log decoding via Anchor IDLs (uses idlRegistry.ts)
     fork.ts               — clone a program + accounts from a source cluster into local validator
+    doctor.ts             — environment diagnostic: composes existing checks (toolchain.ts checkWslToolchain,
+                            wallet.ts resolveWalletPath, connection.ts probe, anchorProject detection,
+                            Node version gate) into a pass/warn/fail report; --json/--ci supported;
+                            exit 0 for warnings, non-zero only for genuine failures
     top.ts                — STUB (not yet implemented)
   lib/
     connection.ts          — getConnection()/getActiveCluster(), v1 @solana/web3.js ONLY (see 3.1)

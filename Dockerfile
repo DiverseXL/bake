@@ -27,9 +27,9 @@
 FROM rust:1.89.0-slim-trixie
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV HOME=/root
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
-ENV PATH="/usr/local/cargo/bin:${PATH}"
 
 # System deps (keep the layer small)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -41,13 +41,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Official Node tarball (sha256-verified against SHASUMS256.txt), not
 # NodeSource: pinned, distro-independent, and works on trixie (NodeSource
 # has no trixie repo).
-RUN curl -fsSL https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-x64.tar.xz \
-        -o /tmp/node.tar.xz && \
+RUN cd /tmp && \
+    curl -fsSL -o node-v22.23.2-linux-x64.tar.xz \
+        https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-x64.tar.xz && \
     curl -fsSL https://nodejs.org/dist/v22.23.2/SHASUMS256.txt | \
-        grep -F "node-v22.23.2-linux-x64.tar.xz" > /tmp/node.sha && \
-    sha256sum -c /tmp/node.sha && \
-    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 && \
-    rm /tmp/node.tar.xz /tmp/node.sha && \
+        grep -F "node-v22.23.2-linux-x64.tar.xz" | sha256sum -c - && \
+    tar -xJf node-v22.23.2-linux-x64.tar.xz -C /usr/local --strip-components=1 && \
+    rm node-v22.23.2-linux-x64.tar.xz && \
     node --version && \
     npm --version
 
@@ -58,7 +58,12 @@ RUN curl -sSfL https://release.anza.xyz/v3.1.10/install | \
     sh && \
     /root/.local/share/solana/install/active_release/bin/solana --version
 
-ENV PATH="/root/.local/share/solana/install/active_release/bin:${PATH}"
+# PATH is baked into the image ENV so every RUN and every container process
+# sees solana / cargo-build-sbf / cargo / anchor / node with no profile
+# sourcing.  Docker ENV persists across layers and at runtime — unlike WSL's
+# `wsl -e bash -lc "..."` invocations, where `export` in one call is
+# invisible to the next.  Do not replace this with `source ~/.cargo/env`.
+ENV PATH="/root/.local/share/solana/install/active_release/bin:/usr/local/cargo/bin:/usr/local/bin:${PATH}"
 
 # -- Anchor CLI 1.2.0 (pinned prebuilt release binary) ----------------------
 #    This is the exact binary `avm install 1.2.0` would download — the
@@ -75,18 +80,22 @@ RUN curl -fsSL \
     rm /tmp/anchor && \
     anchor --version
 
-# -- Pre-warm platform-tools v1.57 -----------------------------------------
-#    `cargo-build-sbf --version` prints the version and exits BEFORE any
-#    download happens, so pre-warming needs a real build invocation.  We
+# -- Pre-warm platform-tools v1.57 (image-build time, not first run) -------
+#    Confirmed-working version from WSL debugging.  `cargo-build-sbf
+#    --version` prints the version and exits BEFORE any download happens, so
+#    pre-warming needs a real invocation with `--tools-version v1.57`.  We
 #    build a tiny throwaway cdylib crate — this downloads platform-tools
 #    v1.57 into ~/.cache/solana/v1.57, exactly the cache `anchor build
-#    --tools-version v1.57` reads at runtime.  No network needed later.
+#    --tools-version v1.57` reads at runtime.  The download is baked into
+#    this layer; a later container run does not need network for tools.
+#    Do not "simplify" this back to `--version`; it silently stops pre-warming.
 RUN mkdir -p /tmp/prewarm/src && cd /tmp/prewarm && \
     printf '[package]\nname = "prewarm"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n' > Cargo.toml && \
     printf '#[no_mangle]\npub extern "C" fn entrypoint() {}\n' > src/lib.rs && \
     cargo-build-sbf --tools-version v1.57 && \
     rm -rf /tmp/prewarm && \
-    echo "platform-tools v1.57 pre-warmed"
+    test -d /root/.cache/solana/v1.57 && \
+    echo "platform-tools v1.57 pre-warmed into image layer"
 
 # -- Default dev wallet -----------------------------------------------------
 #    Anchor.toml sets `wallet = "~/.config/solana/id.json"` — generate one
@@ -96,14 +105,18 @@ RUN mkdir -p /root/.config/solana && \
     solana-keygen new --no-bip39-passphrase --silent --force \
         /root/.config/solana/id.json
 
-# -- Verify the full toolchain ---------------------------------------------
+# -- Verify the full toolchain is on PATH with no extra sourcing -----------
 RUN echo "=== bake-toolchain versions ===" && \
     rustc --version && \
     cargo --version && \
     solana --version && \
+    cargo-build-sbf --version && \
     anchor --version && \
     node --version && \
     npm --version && \
+    command -v solana && \
+    command -v anchor && \
+    command -v cargo-build-sbf && \
     echo "=== done ==="
 
 # -- Workspace (mounted at runtime, not copied) ----------------------------

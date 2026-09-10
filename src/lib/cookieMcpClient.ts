@@ -10,9 +10,10 @@
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
 import { CLUSTERS } from "../clusters/index.js";
+
+const require = createRequire(import.meta.url);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,20 +69,28 @@ async function getClient(): Promise<Client> {
 
   const cookieRpcUrl = CLUSTERS.cookie.endpoint;
 
-  // Resolve cookie-mcp server entry point — prefer local node_modules
-  const localServerJs = join(
-    process.cwd(),
-    "node_modules",
-    "cookie-mcp",
-    "dist",
-    "mcp",
-    "server.js",
-  );
-  const useLocal = existsSync(localServerJs);
+  // Resolve cookie-mcp server entry point — works for both local dev and
+  // global npm install (where process.cwd() is unrelated to the package).
+  // 1) Try require.resolve relative to the package's own node_modules
+  // 2) Fall back to npx which resolves from the global store
+  let serverCmd: string;
+  let serverArgs: string[];
+  try {
+    // require.resolve works from any file inside the installed package — it
+    // walks up from __dirname looking for node_modules/cookie-mcp.
+    const resolved = require.resolve("cookie-mcp/dist/mcp/server.js");
+    serverCmd = "node";
+    serverArgs = [resolved];
+    auditLog(`resolved cookie-mcp at ${resolved}`);
+  } catch {
+    serverCmd = "npx";
+    serverArgs = ["-y", "cookie-mcp"];
+    auditLog("cookie-mcp not found locally — falling back to npx");
+  }
 
   transport = new StdioClientTransport({
-    command: useLocal ? "node" : "npx",
-    args: useLocal ? [localServerJs] : ["-y", "cookie-mcp"],
+    command: serverCmd,
+    args: serverArgs,
     env: {
       COOKIE_RPC_URL: cookieRpcUrl,
       // SECURITY: Never set COOKIE_PRIVATE_KEY — read-only integration.

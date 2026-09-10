@@ -12,3 +12,4 @@ export { decodeCommand } from "./decode.js";
 export { topCommand } from "./top.js";
 export { mcpCommand } from "./mcp.js";
 export { whoamiCommand } from "./whoami.js";
+export { doctorCommand } from "./doctor.js";
