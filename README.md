@@ -1,134 +1,140 @@
-# bake
+# bake 🍪
 
-**bake** is a developer tool for [Cookie Chain](https://cookiescan.io) — an SVM/Solana-compatible blockchain.
+**The Vercel CLI for Cookie Chain.** Build, deploy, verify, and roll back Anchor programs in seconds — with every deploy permanently recorded on-chain.
 
-> This is the initial project skeleton. Business logic is not implemented yet; every command currently prints a "not implemented yet" stub.
-
-## Installation
-
-For end users (placeholder):
-
-```bash
-npm install -g bake-cli
+```
+   .-'''-.
+  /  o  o \
+ |  o    o     bake!
+  \  o  o /
+   `-...-'
 ```
 
-For local development:
+[![npm version](https://img.shields.io/npm/v/bakeacookie.svg)](https://www.npmjs.com/package/bakeacookie)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
+---
+
+## Why bake exists
+
+[Cookie Chain](https://www.cookiechain.wtf) is a fast, cheap, community-owned SVM blockchain — programs deploy for pennies with sub-second finality. But developer tooling on Cookie Chain today is almost entirely vanilla Solana CLI pointed at a different RPC endpoint. There's no deployment orchestration, no on-chain deploy history, no casual rollback, and no security-gated deploy flow — gaps the ecosystem's own roadmap lists as future work.
+
+**bake closes that gap now.** Every command is designed around one idea: Cookie Chain's economics make things possible that are impractical anywhere else — like a rollback that costs cents, or a permanent, on-chain, queryable ledger of every deploy you've ever made.
+
+## What makes bake different
+
+- **On-chain deploy history.** Every `bake deploy` registers a permanent record — commit, build hash, deployer, timestamp — in a small on-chain Anchor program called the **Recipe Book**. Nothing else in the ecosystem does this.
+- **Cross-platform by default.** Anchor/Solana's build toolchain doesn't run natively on Windows — even the official Anchor CLI needs WSL. `bake` auto-detects native Windows and transparently relays toolchain-dependent commands through WSL, so Windows developers get the same one-command experience as macOS/Linux, without manually bridging shells.
+- **Cheap, honest rollback.** `bake rollback` rebuilds and redeploys a previous commit, verified with a git-state safety net that's been tested against deliberate mid-operation failures — your working directory is never left in a broken state.
+- **Cryptographic proof, not just trust.** `bake prove` verifies that what's actually running on-chain matches what your Recipe Book says was deployed, using real ELF-binary hash comparison — not a guess.
+- **Agent-native.** `bake mcp` exposes bake's capabilities to AI agents over the Model Context Protocol, with a safety-first design: write operations (deploy, rollback) are completely invisible to an agent unless an explicit policy file enables them, and even then require a second confirming call before executing.
+
+## Install
 
 ```bash
-npm install
+npm install -g bakeacookie
 ```
 
-## Usage
-
-Run the CLI in development mode (executes TypeScript source directly):
+The package is published as `bakeacookie` (the shorter names were already taken), but the command you run is just:
 
 ```bash
-npm run dev -- --help
+bake --help
 ```
 
-Example of invoking a specific command:
+**Windows users:** bake needs a Solana/Anchor toolchain available via WSL for build/deploy commands. Run `bake doctor` after install to check your environment — see [REQUIREMENTS.md](./REQUIREMENTS.md) for full setup steps.
+
+## Quickstart
 
 ```bash
-npm run dev -- use cookie
-npm run dev -- deploy
-npm run dev -- logs
+bake login                 # creates or links a local wallet — zero ceremony
+bake use cookie             # point at Cookie Chain (or: mainnet, devnet, a local validator URL)
+bake init my-program        # scaffold a new Anchor project, pre-wired for Cookie Chain
+cd my-program
+bake deploy                 # build → deploy → hash → register on-chain, all in one command
+bake logs -f                # watch it live
 ```
 
-Global flags:
+## Command reference
 
-```bash
-bake --ci        # Disable spinners/colors, force JSON-safe output
-bake --json      # Output results as JSON
-bake -v          # Print version
-bake --version   # Print version
+| Command | Description |
+|---|---|
+| `bake login` | Local keypair by default (zero ceremony); `--wallet nightly` for high-stakes confirmations |
+| `bake use [cluster\|url]` | Switch active cluster (`cookie`, `mainnet`, `devnet`, or any RPC URL) |
+| `bake whoami` | Show active wallet(s) and cluster |
+| `bake init [name]` | Scaffold a new Anchor project pre-wired for Cookie Chain |
+| `bake deploy` | Build, deploy, hash, and register the deploy in the on-chain Recipe Book |
+| `bake rollback [entry]` | Rebuild and redeploy a previous Recipe Book entry |
+| `bake logs [programId]` | View recent or live-streamed (`-f`) program logs, with Anchor event decoding |
+| `bake prove [entry]` | Verify on-chain bytecode matches a Recipe Book entry; `--rebuild` for full reproducibility proof |
+| `bake diff [entry]` | Show what's changed (source and, with `--rebuild`, bytecode) since a given deploy |
+| `bake decode <sig\|--account>` | Decode a transaction or account using a program's IDL |
+| `bake stats [programId]` | Program activity (invocations, error rate, unique signers, CU) plus CookieScan network context |
+| `bake fork <programId>` | Clone a program (and optionally its accounts) from any cluster into a local validator |
+| `bake doctor` | Full environment health check (Node, git, WSL, wallet, cluster, balance, project) |
+| `bake mcp` | Run bake as an MCP server for AI agents, with policy-gated write access |
+
+Every command supports `--ci` (plain, color-free output) and `--json` (structured output for scripting).
+
+## How it works
+
+```mermaid
+flowchart TD
+    Dev[Developer] -->|bake deploy| CLI[bake CLI]
+
+    CLI --> Platform{Windows?}
+    Platform -->|Yes| Relay[WSL Toolchain Relay]
+    Platform -->|No| Toolchain[Anchor / Solana Toolchain]
+    Relay --> Toolchain
+
+    Toolchain -->|anchor build + deploy| Cookie[(Cookie Chain)]
+    CLI -->|register_deploy| RecipeBook[[Recipe Book\non-chain program]]
+    RecipeBook -.stores.-> Entry[commit · build hash\ndeployer · timestamp]
+    RecipeBook --> Cookie
+
+    CLI -->|bake prove| RecipeBook
+    CLI -->|bake rollback| Git[Git history] --> Toolchain
+
+    CLI -->|bake stats| CookieScan[CookieScan DAS / REST API]
+    CLI -->|bake mcp| Agent[AI Agent]
+    Agent -->|policy-gated writes| CLI
+    CLI -->|bake_check_token_liquidity| CookieMCP[cookie-mcp\nread-only, isolated]
+    CookieMCP --> CookieScan
+
+    style RecipeBook fill:#C68E5B,color:#000
+    style Cookie fill:#F4D03F,color:#000
 ```
 
-## Planned Commands
+## Architecture
 
-| Command         | Description                                           |
-| --------------- | ----------------------------------------------------- |
-| `bake init`     | Initialize a new bake project in the current directory |
-| `bake login`    | Authenticate with your Cookie Chain wallet            |
-| `bake use`      | Switch active cluster or configure project settings   |
-| `bake deploy`   | Deploy an Anchor program to the active cluster        |
-| `bake logs`     | View program logs on the active cluster               |
-| `bake rollback` | Roll back to a previous program version               |
-| `bake diff`     | Show differences between local and deployed programs  |
-| `bake stats`    | Show program statistics and usage metrics             |
-| `bake prove`    | Generate or verify program proofs                     |
-| `bake fork`     | Fork a program or cluster state for local development |
-| `bake decode`   | Decode transaction data or program instructions       |
-| `bake top`      | View network and program leaderboards or top accounts |
-| `bake mcp`      | Interact with the bake MCP (model context protocol) server |
+- `src/commands/` — one file per CLI command
+- `src/lib/deployPipeline.ts` — the single, shared build→deploy→hash→register implementation used by both `deploy` and `rollback`
+- `src/lib/toolchain.ts` — cross-platform Anchor/Solana subprocess runner, including the Windows→WSL relay
+- `src/lib/recipeBook.ts` — Recipe Book client (real, on-chain) with a mock implementation for testing command orchestration
+- `src/idl/recipe_book.json` — hand-written, live-validated IDL (a durable fallback alongside auto-generation)
+- `anchor/programs/recipe_book/` — the on-chain Recipe Book Anchor program
+- `src/lib/mcpServer.ts` / `mcpPolicy.ts` — the MCP server and its write-policy gating
+- See [AGENTS.md](./AGENTS.md) for detailed internals, known toolchain gotchas, and the full failure-signature reference gathered during development.
 
-## Development
+## Vision & Roadmap
 
-```bash
-npm install          # Install dependencies
-npm run dev -- --help  # Run the CLI in dev mode
-npm run build        # Compile TypeScript to dist/
-npm run start        # Run the compiled CLI
-npm run lint         # Lint source files
-npm run format       # Format source files with Prettier
-npm run typecheck    # Type-check without emitting files
-```
+What's shipped today already turns Cookie Chain's cost/speed advantage into daily muscle memory. Where this is headed:
 
-### Configuration
+- **`bake fork` enhancements** — deeper Solana mainnet rehearsal workflows
+- **`bake doctor` → `bake session`** — disposable, ephemeral deploy workspaces (open → deploy → close/settle)
+- **Multisig-first upgrades** — `bake deploy --authority multisig`, proposal/execution flow
+- **`bake audit`** — static analysis as a deploy-time security gate (only shipping once it can be genuinely credible, not superficial)
+- **`bake agent init`** — scaffold a minimal agent wired to bake + [cookie-mcp](https://github.com/cookiechain/cookie-mcp)
+- **Companion web dashboard** — wallet-connected (Nightly) visualization of your Recipe Book deploy history — see [bake-dashboard](#) *(link once live)*
 
-- **Global config:** `~/.bake/config.json` — stores active cluster, wallet/session info, and user preferences.
-- **Project config:** `./bake.config.json` — optional; can override program name, cluster, and paths to Anchor programs.
+The goal: if you're deploying a program on Cookie Chain, you should be using bake.
 
-The config loader merges project config over global config and validates the shape with Zod. Malformed config produces a friendly, non-stack-trace error.
+## Companion dashboard
 
-### Adding a new cluster
+A web dashboard for visualizing Recipe Book deploy history, connected via Nightly wallet, lives in a separate repository: **[bake-dashboard](#)** *(link once created)*.
 
-Edit `src/clusters/index.ts` and add a preset entry to the `CLUSTERS` object.
+## Contributing
 
-## Testing without WSL (Docker)
-
-If you don't have WSL set up (or are on macOS/Linux and want a reproducible
-build environment), you can run the Anchor toolchain through Docker instead.
-
-**Build the image once:**
-
-```bash
-docker build -t bake-toolchain .
-```
-
-**Run Anchor commands through the container:**
-
-```bash
-# Build the Recipe Book program
-docker run --rm -v "${PWD}:/workspace" -w /workspace/anchor bake-toolchain \
-    anchor build --arch v0 --tools-version v1.57
-
-# Run the test suite
-docker run --rm -v "${PWD}:/workspace" -w /workspace/anchor bake-toolchain \
-    anchor test --validator legacy
-
-# Drop into an interactive shell
-docker run --rm -it -v "${PWD}:/workspace" -w /workspace/anchor bake-toolchain \
-    bash
-```
-
-Or with docker-compose:
-
-```bash
-docker compose run --rm toolchain anchor build --arch v0 --tools-version v1.57
-docker compose run --rm toolchain anchor test --validator legacy
-docker compose run --rm toolchain bash
-```
-
-The Anchor project directory is mounted as a volume, so code changes on the
-host are reflected immediately without rebuilding the image.
-
-A throwaway dev wallet is generated inside the image (at
-`~/.config/solana/id.json`), so `anchor test`/`anchor deploy` have a payer
-with no setup on your side — the local test validator's faucet funds it.
-
-**Pinned toolchain versions:** Rust 1.89.0 (matches the project's pinned
-`rust-toolchain.toml`), Solana CLI 3.1.10, Anchor CLI 1.2.0 (prebuilt
-release binary, sha256-verified), Node.js 22.x, platform-tools v1.57.
+Issues and PRs welcome. Read [AGENTS.md](./AGENTS.md) first if you're using an AI coding agent to contribute — it documents hard-won toolchain constraints that are easy to accidentally re-break.
 
 ## License
 
