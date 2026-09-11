@@ -13,9 +13,19 @@ export {
   isMockRecipeBookClient,
 } from "./recipeBook.js";
 export {
+  resolveAnchorProjectRoot,
   resolveProgramIdFromAnchorProject,
   resolveProgramName,
 } from "./anchorProject.js";
+export {
+  RadarNotInstalledError,
+  RadarDockerUnavailableError,
+  RADAR_HOMEPAGE,
+  RADAR_INSTALL_COMMAND,
+  runRadarAudit,
+  summarizeFindings,
+  formatFindingsList,
+} from "./radarAudit.js";
 export {
   checkWslToolchain,
   runAnchorBuild,

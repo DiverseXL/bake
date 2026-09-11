@@ -28,6 +28,8 @@
 - **Cheap, honest rollback.** `bake rollback` rebuilds and redeploys a previous commit, verified with a git-state safety net that's been tested against deliberate mid-operation failures — your working directory is never left in a broken state.
 - **Cryptographic proof, not just trust.** `bake prove` verifies that what's actually running on-chain matches what your Recipe Book says was deployed, using real ELF-binary hash comparison — not a guess.
 - **Agent-native.** `bake mcp` exposes bake's capabilities to AI agents over the Model Context Protocol, with a safety-first design: write operations (deploy, rollback) are completely invisible to an agent unless an explicit policy file enables them, and even then require a second confirming call before executing.
+- **Security-gated deploys, honestly sourced.** `bake audit` runs [Radar](https://github.com/auditware/radar) — Auditware's static analyzer for Anchor/Rust contracts, the tool the Solana docs recommend — and `bake deploy --require-audit` refuses to ship critical or high findings. bake ships **no hand-rolled security heuristics**: every finding is Radar's, labelled "powered by Radar".
+- **Genuinely cross-chain, not just architecturally.** The full pipeline (deploy, prove, logs, stats) has been tested end-to-end on Solana devnet, not just Cookie Chain, with zero code changes required.
 
 ## Install
 
@@ -45,7 +47,7 @@ bake --help
 
 ## Requirements
 
-Not every command needs the full toolchain — `bake login`, `bake use`, `bake whoami`, `bake stats`, `bake logs`, and `bake decode` work with just Node.js. For build/deploy commands you'll also need Rust, Solana CLI, and Anchor (or WSL on Windows). See [REQUIREMENTS.md](./REQUIREMENTS.md) for the full breakdown by use case.
+Not every command needs the full toolchain — `bake login`, `bake use`, `bake whoami`, `bake stats`, `bake logs`, and `bake decode` work with just Node.js. For build/deploy commands you'll also need Rust, Solana CLI, and Anchor (or WSL on Windows). `bake audit` additionally requires [Radar](https://github.com/auditware/radar) plus a running Docker daemon (bake prints the one-line Radar install command if it's missing — it never installs a security scanner for you silently). See [REQUIREMENTS.md](./REQUIREMENTS.md) for the full breakdown by use case.
 
 ## Quickstart
 
@@ -66,7 +68,8 @@ bake logs -f                # watch it live
 | `bake use [cluster\|url]` | Switch active cluster (`cookie`, `mainnet`, `devnet`, or any RPC URL) |
 | `bake whoami` | Show active wallet(s) and cluster |
 | `bake init [name]` | Scaffold a new Anchor project pre-wired for Cookie Chain |
-| `bake deploy` | Build, deploy, hash, and register the deploy in the on-chain Recipe Book |
+| `bake deploy` | Build, deploy, hash, and register the deploy in the on-chain Recipe Book; `--require-audit` gates on `bake audit` |
+| `bake audit [path]` | Static analysis for Anchor programs (wraps Radar) — flags high-severity findings; `bake deploy --require-audit` gates deploys on a clean scan |
 | `bake rollback [entry]` | Rebuild and redeploy a previous Recipe Book entry |
 | `bake logs [programId]` | View recent or live-streamed (`-f`) program logs, with Anchor event decoding |
 | `bake prove [entry]` | Verify on-chain bytecode matches a Recipe Book entry; `--rebuild` for full reproducibility proof |
@@ -126,8 +129,8 @@ What's shipped today already turns Cookie Chain's cost/speed advantage into dail
 - **`bake fork` enhancements** — deeper Solana mainnet rehearsal workflows
 - **`bake doctor` → `bake session`** — disposable, ephemeral deploy workspaces (open → deploy → close/settle)
 - **Multisig-first upgrades** — `bake deploy --authority multisig`, proposal/execution flow
-- **`bake audit`** — static analysis as a deploy-time security gate (only shipping once it can be genuinely credible, not superficial)
 - **`bake agent init`** — scaffold a minimal agent wired to bake + [cookie-mcp](https://github.com/cookiechain/cookie-mcp)
+- **`bake top`** — deferred (would require chain-wide indexing infrastructure beyond a CLI's reasonable scope for now)
 - **Companion web dashboard** — wallet-connected (Nightly) visualization of your Recipe Book deploy history — see [bake-dashboard](#) *(link once live)*
 
 The goal: if you're deploying a program on Cookie Chain, you should be using bake.

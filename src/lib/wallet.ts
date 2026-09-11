@@ -11,7 +11,7 @@ import { isAbsolute, join, resolve } from "path";
 import { createInterface } from "node:readline";
 import { ed25519 } from "@noble/curves/ed25519";
 import { Keypair } from "@solana/web3.js";
-import { getGlobalConfigDir, readGlobalConfig, writeGlobalConfig } from "../config/index.js";
+import { getGlobalConfigDir, readGlobalConfig, updateGlobalConfig } from "../config/index.js";
 import { fail } from "./errors.js";
 import { logger } from "./logger.js";
 import chalk from "chalk";
@@ -95,11 +95,10 @@ export async function createLocalWallet(): Promise<{ publicKey: string; walletPa
   // Verify by loading it back.
   const publicKey = Keypair.fromSecretKey(keypairBytes).publicKey.toBase58();
 
-  // Persist walletPath to global config.
-  const existing = readGlobalConfig();
-  const data: Record<string, unknown> = existing ? { ...existing } : {};
-  data.walletPath = BAKE_KEYPATH;
-  writeGlobalConfig(data);
+  // Persist walletPath to global config (read-modify-write under the lock).
+  updateGlobalConfig((data) => {
+    data.walletPath = BAKE_KEYPATH;
+  });
 
   return { publicKey, walletPath: BAKE_KEYPATH };
 }

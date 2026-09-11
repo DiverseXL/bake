@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { CLUSTERS, clusterExists } from "../clusters/index.js";
-import { readGlobalConfig, writeGlobalConfig } from "../config/index.js";
+import { readGlobalConfig, updateGlobalConfig } from "../config/index.js";
 import { getActiveCluster, getConnection } from "../lib/connection.js";
 import { fail, formatUserError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
@@ -125,13 +125,12 @@ async function runUse(input?: string): Promise<void> {
   const wasAlreadyActive =
     current.name === target!.name && current.rpcUrl === target!.rpcUrl;
 
-  // Persist to global config
-  const existingGlobal = readGlobalConfig();
-  const globalData: Record<string, unknown> = existingGlobal
-    ? { ...existingGlobal }
-    : {};
-  globalData.activeCluster = { name: target!.name, rpcUrl: target!.rpcUrl };
-  writeGlobalConfig(globalData);
+  // Persist to global config. This is a read-modify-write, so it must happen
+  // under the config lock — otherwise a concurrent bake process (e.g. a
+  // background `bake fork` or a parallel CI run) could clobber this update.
+  updateGlobalConfig((data) => {
+    data.activeCluster = { name: target!.name, rpcUrl: target!.rpcUrl };
+  });
 
   // Probe slot
   const slot = await probeSlot(target!.rpcUrl);

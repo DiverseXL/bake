@@ -17,6 +17,7 @@ import {
   forkCommand,
   decodeCommand,
   topCommand,
+  auditCommand,
   mcpCommand,
   whoamiCommand,
   doctorCommand,
@@ -76,6 +77,7 @@ program.addCommand(proveCommand);
 program.addCommand(forkCommand);
 program.addCommand(decodeCommand);
 program.addCommand(topCommand);
+program.addCommand(auditCommand);
 program.addCommand(mcpCommand);
 program.addCommand(whoamiCommand);
 program.addCommand(doctorCommand);

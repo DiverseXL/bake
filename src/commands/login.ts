@@ -2,7 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { readFileSync } from "fs";
 import { Keypair } from "@solana/web3.js";
-import { readGlobalConfig, writeGlobalConfig } from "../config/index.js";
+import { updateGlobalConfig } from "../config/index.js";
 import { logger } from "../lib/logger.js";
 import { fail } from "../lib/errors.js";
 import { connectNightly } from "../lib/nightly.js";
@@ -20,14 +20,14 @@ async function runLogin(opts: { wallet?: string }): Promise<void> {
     try {
       const result = await connectNightly();
 
-      // Persist to global config (does NOT overwrite walletPath).
-      const existing = readGlobalConfig();
-      const data: Record<string, unknown> = existing ? { ...existing } : {};
-      data.nightlyWallet = {
-        publicKey: result.publicKey,
-        sessionId: result.sessionId,
-      };
-      writeGlobalConfig(data);
+      // Persist to global config (does NOT overwrite walletPath). The read is
+      // inside the lock so it can't race a concurrent walletPath write.
+      updateGlobalConfig((data) => {
+        data.nightlyWallet = {
+          publicKey: result.publicKey,
+          sessionId: result.sessionId,
+        };
+      });
 
       if (isJson) {
         console.log(
@@ -75,10 +75,9 @@ async function runLogin(opts: { wallet?: string }): Promise<void> {
   }
 
   // Persist walletPath to global config (in case it wasn't set yet).
-  const existing = readGlobalConfig();
-  const data: Record<string, unknown> = existing ? { ...existing } : {};
-  data.walletPath = walletPath;
-  writeGlobalConfig(data);
+  updateGlobalConfig((data) => {
+    data.walletPath = walletPath;
+  });
 
   if (isJson) {
     console.log(JSON.stringify({ publicKey, walletPath, created }));

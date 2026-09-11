@@ -10,6 +10,7 @@ export { proveCommand } from "./prove.js";
 export { forkCommand } from "./fork.js";
 export { decodeCommand } from "./decode.js";
 export { topCommand } from "./top.js";
+export { auditCommand } from "./audit.js";
 export { mcpCommand } from "./mcp.js";
 export { whoamiCommand } from "./whoami.js";
 export { doctorCommand } from "./doctor.js";

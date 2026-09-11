@@ -142,7 +142,8 @@ src/
                             high-stakes confirmations only, NOT default login path)
     use.ts                — cluster switching, v1 web3.js Connection-based reachability probe
     whoami.ts             — shows active wallet(s) + cluster
-    deploy.ts             — thin UI wrapper around runDeployPipeline()
+    deploy.ts             — thin UI wrapper around runDeployPipeline();
+                            --require-audit gates on bake audit (Radar)
     rollback.ts           — UI + confirm around runRollbackPipeline() (lib/rollbackPipeline.ts)
     logs.ts               — history + --follow live streaming, basic Anchor log line parsing
     prove.ts               — Level 1 (on-chain hash check) + Level 2 (--rebuild, full reproducibility)
@@ -157,6 +158,8 @@ src/
                             Node version gate) into a pass/warn/fail report; --json/--ci supported;
                             exit 0 for warnings, non-zero only for genuine failures
     top.ts                — STUB (not yet implemented)
+    audit.ts              — static analysis wrapper around Radar (Section 13);
+                            NOT custom security heuristics
   lib/
     connection.ts          — getConnection()/getActiveCluster(), v1 @solana/web3.js ONLY (see 3.1)
     toolchain.ts            — cross-platform Anchor/Solana subprocess runner (Section 2.3);
@@ -174,6 +177,9 @@ src/
                                   decode.ts and logs.ts; extend REGISTRY for new programs,
                                   or use --idl <path> at runtime for ad-hoc decoding)
     cookieMcpClient.ts            — lazy singleton client for cookie-mcp (see Section 10.7)
+    radarAudit.ts                 — Radar detection/invocation/parsing + result
+                                    presentation, shared by `bake audit` and
+                                    `deploy --require-audit` (Section 13)
     git.ts                     — checkout/restore helpers, used by rollback and prove
     wallet.ts                    — loadLocalWallet() (async; prompts inline for first-run wallet
                                     creation in interactive sessions when no wallet exists — gated
@@ -529,6 +535,7 @@ are backlog for future work.
 | `deploy.ts` had no confirmation prompt before on-chain deploy | HIGH | Added `--yes`/`--ci`/`--json` gating + interactive `y/N` prompt |
 | WSL relay env var key names not shell-quoted in `toolchain.ts` | MEDIUM | Quoted key via `shellQuote(key)` |
 | `readGlobalConfig()` / `readProjectConfig()` silently return `null` on corrupted JSON | LOW | Added stderr warning before returning null |
+| Concurrent `bake` processes could clobber `~/.bake/config.json` (read-modify-write race) | LOW | Config writes now go through an atomic `~/.bake/config.lock`; see Section 11.2 |
 
 ### Backlog (Medium/Low)
 
@@ -536,7 +543,7 @@ are backlog for future work.
 |---------|----------|-------|
 | `prove.ts --rebuild` has no confirmation prompt before git checkout | LOW | Mitigated by clean-tree requirement + `finally` restore |
 | `config.json` written without `chmod 0o600` (unlike keypair.json) | LOW | Low risk on single-user machines |
-| `writeGlobalConfig()` uses non-atomic `writeFileSync` | LOW | Single-user CLI; unsafe only in concurrent CI |
+| ~~`writeGlobalConfig()` uses non-atomic `writeFileSync`~~ | ~~LOW~~ | **RESOLVED 2026-09-11** — see Section 11.2 |
 | No pre-flight RPC check in `bake deploy` | LOW | User waits for full build to fail if RPC is down |
 | No pre-flight balance check before deploy/rollback | LOW | Raw Solana CLI error shown; could be friendlier |
 | `npm audit` — `bigint-buffer` (high), `toml` (2x high), `stream-json` (moderate), `uuid` (moderate) | LOW | Transitive dependencies via `@solana/web3.js`, `@coral-xyz/anchor`, `@nightlylabs/nightly-connect-solana`, and `cookie-mcp`. Detailed triage in Section 11.1 confirms none are exploitable in bake's execution model; no automated fix is possible without breaking core Anchor/web3.js bindings. |
@@ -564,6 +571,40 @@ are backlog for future work.
    - *Exploitability:* **GENUINELY NOT EXPLOITABLE**. Vulnerability strictly applies to deterministic UUID generation (`v3`, `v5`, `v6`) when an explicit out-of-bounds destination Buffer is supplied. Nightly Connect and Jayson use random `v4` UUIDs for session and RPC request tracking.
    - *Action:* Safe to ignore.
 
+### 11.2 Config write locking (resolved 2026-09-11)
+
+Two `bake` processes running at once (a background `bake fork` validator plus a
+foreground `bake use`, or two scripted CI runs) used to be able to read,
+modify, and write `~/.bake/config.json` with no coordination, so one update
+could silently clobber the other.
+
+**Mechanism** (all in `src/config/index.ts`, dependency-free):
+
+- A write takes an exclusive lock at `~/.bake/config.lock` via
+  `openSync(path, "wx")` — `O_CREAT | O_EXCL` is an atomic OS-level check with
+  no TOCTOU window.
+- If the lock is held, acquisition retries 10 times at 50ms (≈500ms total).
+  If it still fails it logs a warning and proceeds anyway: a stale lock from a
+  crashed process must never permanently block a user's command.
+- Locks older than 5 seconds are treated as abandoned and removed before
+  retrying, so a crash can't wedge bake forever.
+- The lock is always released in a `finally` block, and **only if this process
+  actually acquired it** — a process that merely gave up must not delete a
+  live lock belonging to another process.
+- The lock is reentrant within a process (depth-counted), so helpers can nest.
+
+**Why reads are inside the lock too.** Locking only the final write is not
+enough. Two processes could both read the same base config, then write in
+turn, and the second write would drop the first process's field. Commands that
+update a field therefore call `updateGlobalConfig(mutator)`, which performs the
+whole read → modify → write sequence under the lock. Call sites: `bake use`
+(activeCluster), `bake login` (walletPath / nightlyWallet), and
+`createLocalWallet()` in `src/lib/wallet.ts`.
+
+`writeProjectConfig()` (`bake.config.json` in the project dir) intentionally
+stays lock-free — project configs are written only by `bake init`, which is not
+run concurrently against the same directory.
+
 ---
 
 ## 12. `@cookiechain/skill` integration (optional, post-init)
@@ -587,3 +628,73 @@ files that teach AI coding assistants (Claude, Cursor) Cookie Chain facts
 - The `npx @cookiechain/skill install` call uses `execFile` (pure Node, no
   WSL relay needed). Failures are caught and printed as a one-line warning;
   the scaffold itself is never affected.
+
+---
+
+## 13. `bake audit` — a wrapper around Radar (not bake's own scanner)
+
+`bake audit` does static analysis, but **bake implements no security heuristics
+of its own**. It is a thin wrapper around
+[Radar](https://github.com/auditware/radar) — Auditware's static analyzer for
+Rust/Anchor/Stylus/Solidity contracts, the one the Solana docs recommend. All
+output is labelled "powered by Radar" and must stay that way: the credibility
+comes from using an established, maintained tool, and presenting its findings
+as bake's own analysis would be dishonest.
+
+A hand-rolled regex/AST "security check" set would produce confident-sounding
+false positives and miss real issues. Radar already maintains the rule set;
+bake's job is to make it convenient, scriptable, and deploy-gated.
+
+### Exact invocation
+
+`bake audit` runs Radar through `runToolchainCommand()` (so it is relayed
+through WSL on Windows) and always requests Radar's structured JSON report:
+
+```
+radar -p <project-root> -o <tmpdir>/bake-radar-audit-<rand>.json --fail-on high
+```
+
+- `<project-root>`: the path argument, or `resolveAnchorProjectRoot()` (cwd if
+  it has an `Anchor.toml`, else `cwd/anchor`) — see `anchorProject.ts`.
+- `--fail-on high` makes Radar's own exit code line up with bake's gate
+  (critical/high = fail), so it does not have to be re-derived from text.
+- The JSON report is Radar's finding array:
+  `{ name, severity, locations[], certainty }`, with `severity` one of
+  `critical | high | medium | low`.
+
+### Confirmed Radar contract (verified against the installed tool, not just docs)
+
+- **Install**: `curl -L https://raw.githubusercontent.com/auditware/radar/main/install-radar.sh | bash`
+  clones to `$XDG_CONFIG_HOME/.radar` (default `$HOME/.radar`) and symlinks
+  `/usr/local/bin/radar`. **It requires Docker, installed and running** — Radar
+  is a 5-container compose stack (api, controller, postgres, rabbitmq, celery),
+  not a standalone binary.
+- **Detection**: `command -v radar`, falling back to `$HOME/.radar/radar`. The
+  fallback is required because the installer appends its directory to
+  `~/.bashrc`, which non-interactive shells skip — so `radar` is frequently
+  *not* on PATH even when installed.
+- **Exit codes**: `0` clean, `1` findings at/above `--fail-on`, `2` operational
+  error. **Gotcha**: Radar's shell wrapper also exits `1` for its own startup
+  failures (its `check_docker` gives up with `exit 1`), so bake scans the
+  output for known Docker-failure signatures and reports those as an
+  operational error (bake exit 2) instead of misreporting them as a
+  high-severity finding. Do not remove that detection.
+
+### bake's exit codes
+
+- `0` — no critical/high findings
+- `1` — at least one critical/high finding (usable as a CI gate)
+- `2` — operational error: Radar missing, Docker unavailable, or Radar exit 2
+
+### `bake deploy --require-audit`
+
+Opt-in deploy gate: runs the same `runRadarAudit()` and refuses to deploy when
+any critical/high finding exists, listing the findings. There is deliberately
+**no `--ignore-audit` override** — the honest framing is "opt into the gate",
+not "opt into ignoring your own gate". To deploy without auditing, omit the
+flag. Both commands share `src/lib/radarAudit.ts`; do not duplicate the scan or
+parsing logic in either one (same rule as Section 2.6).
+
+Radar is **never** silently auto-installed: that is a deliberate/visible step
+for a security scanner, unlike cookie-mcp's silent-spawn read-only client
+(Section 10.7). A missing Radar prints the install command and exits 2.
