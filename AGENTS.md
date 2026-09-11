@@ -539,8 +539,30 @@ are backlog for future work.
 | `writeGlobalConfig()` uses non-atomic `writeFileSync` | LOW | Single-user CLI; unsafe only in concurrent CI |
 | No pre-flight RPC check in `bake deploy` | LOW | User waits for full build to fail if RPC is down |
 | No pre-flight balance check before deploy/rollback | LOW | Raw Solana CLI error shown; could be friendlier |
-| `cookieMcpClient.ts` hardcodes `CLUSTERS.cookie.endpoint` | LOW | Ignores user's active cluster |
-| `npm audit` — `bigint-buffer` (high), `toml` (high), `uuid` (moderate), `stream-json` (moderate) | LOW | Transitive deps via `@solana/web3.js` + `@coral-xyz/anchor`; no fix without major version bump |
+| `npm audit` — `bigint-buffer` (high), `toml` (2x high), `stream-json` (moderate), `uuid` (moderate) | LOW | Transitive dependencies via `@solana/web3.js`, `@coral-xyz/anchor`, `@nightlylabs/nightly-connect-solana`, and `cookie-mcp`. Detailed triage in Section 11.1 confirms none are exploitable in bake's execution model; no automated fix is possible without breaking core Anchor/web3.js bindings. |
+
+### 11.1 Detailed npm Audit Triage & Exploitability Analysis
+
+1. **`bigint-buffer <=1.1.5`** (HIGH — Buffer Overflow via `toBigIntLE()` / GHSA-3gc7-fjrx-p6mg):
+   - *Chain:* `@solana/web3.js` & `@solana/buffer-layout-utils` (via `@solana/spl-token` and `cookie-mcp` DEX SDKs).
+   - *Exploitability:* **GENUINELY NOT EXPLOITABLE**. On Node.js (Windows & Linux x64), `bigint-buffer`'s native C++ addon fails to load or pure JS / BigInt is used. Furthermore, `toBigIntLE()` buffer overflow requires untrusted binary input passed with invalid length arguments into raw buffer layout decoders. `bake` only decodes known on-chain Recipe Book accounts using Borsh schemas and classic v1 Web3 RPC types.
+   - *Action:* Retain `@solana/web3.js@1.98.0` pinned as required by `@coral-xyz/anchor`.
+2. **`toml <=4.1.2`** (HIGH — Uncontrolled Recursion / GHSA-82x6-q7mm-w9cf):
+   - *Chain:* Pulled in by `@coral-xyz/anchor` -> `toml`.
+   - *Exploitability:* **GENUINELY NOT EXPLOITABLE**. `bake` never invokes Anchor's JS TOML parser on untrusted input. In fact, `bake`'s own `anchorProject.ts` uses its own minimal line-based regex parser (`parseProgramNamesFromToml`) rather than `toml-node`.
+   - *Action:* No upstream patch in `toml` exists without Anchor replacing the library.
+3. **`toml <=4.1.2`** (HIGH — Prototype Pollution via `__proto__` / GHSA-v5mp-jgw5-2x6j):
+   - *Chain:* Pulled in by `@coral-xyz/anchor` -> `toml`.
+   - *Exploitability:* **GENUINELY NOT EXPLOITABLE**. The developer's local `Anchor.toml` is trusted configuration authored by the developer, not arbitrary remote payload input.
+   - *Action:* Documented non-issue.
+4. **`stream-json <=3.4.0`** (MODERATE — Algorithmic DoS in nested filtering / GHSA-528h-pc64-c93x):
+   - *Chain:* `@solana/web3.js` -> `jayson` -> `stream-json`.
+   - *Exploitability:* **GENUINELY NOT EXPLOITABLE**. `jayson` is used by `@solana/web3.js` for JSON-RPC over HTTP/WS. Solana RPC responses from trusted nodes do not provide deeply nested adversarial JSON designed to trigger quadratic depth search in stream-json filters.
+   - *Action:* No safe bump available without breaking web3.js v1 compatibility.
+5. **`uuid <11.1.1`** (MODERATE — Missing buffer bounds check in v3/v5/v6 / GHSA-w5hq-g745-h8pq):
+   - *Chain:* `jayson` -> `uuid`, and `@nightlylabs/nightly-connect-solana` -> `@nightlylabs/nightly-connect-base` -> `uuid`.
+   - *Exploitability:* **GENUINELY NOT EXPLOITABLE**. Vulnerability strictly applies to deterministic UUID generation (`v3`, `v5`, `v6`) when an explicit out-of-bounds destination Buffer is supplied. Nightly Connect and Jayson use random `v4` UUIDs for session and RPC request tracking.
+   - *Action:* Safe to ignore.
 
 ---
 
