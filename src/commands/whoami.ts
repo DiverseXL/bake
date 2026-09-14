@@ -2,6 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { readGlobalConfig } from "../config/index.js";
 import { getActiveCluster } from "../lib/connection.js";
+import { getStalePresetWarning } from "../clusters/index.js";
 import { logger } from "../lib/logger.js";
 
 interface WhoamiResult {
@@ -9,12 +10,14 @@ interface WhoamiResult {
   nightlyWallet: string | null;
   cluster: string;
   rpcUrl: string;
+  warning?: string;
 }
 
 async function runWhoami(): Promise<void> {
   const isJson = process.env.BAKE_JSON === "true";
   const cfg = readGlobalConfig();
   const cluster = getActiveCluster();
+  const staleWarning = getStalePresetWarning(cluster);
 
   const localWallet = cfg?.walletPath ?? null;
   const nightlyWallet = cfg?.nightlyWallet?.publicKey ?? null;
@@ -24,6 +27,7 @@ async function runWhoami(): Promise<void> {
     nightlyWallet,
     cluster: cluster.name,
     rpcUrl: cluster.rpcUrl,
+    ...(staleWarning ? { warning: staleWarning } : {}),
   };
 
   if (isJson) {
@@ -33,6 +37,9 @@ async function runWhoami(): Promise<void> {
 
   console.log();
   console.log(`  Cluster:     ${chalk.bold(cluster.name)} (${cluster.rpcUrl})`);
+  if (staleWarning) {
+    console.log(`               ${chalk.yellow(staleWarning)}`);
+  }
   if (localWallet) {
     console.log(`  Local key:   ${chalk.dim(localWallet)}`);
   } else {

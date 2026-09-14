@@ -193,7 +193,10 @@ async function runAudit(pathArg?: string): Promise<void> {
 
   let result: RadarAuditResult;
   try {
-    result = await runRadarAudit({ targetPath: target });
+    result = await runRadarAudit({
+      targetPath: target,
+      onProgress: isJsonMode() || isCiMode() ? undefined : (msg) => logger.info(`  ${msg}`),
+    });
   } catch (err) {
     if (err instanceof RadarNotInstalledError) printNotInstalled(err);
     if (isJsonMode()) {

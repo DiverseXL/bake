@@ -167,14 +167,17 @@ async function resolveRadarCommand(cwd: string): Promise<string | null> {
  * Pre-start radar's Docker containers so radar's own `docker compose up`
  * is a no-op. This avoids a race condition where radar's cleanup + restart
  * sequence fails on WSL2 Docker Desktop due to health check timing.
+ *
+ * Uses a shorter timeout (60s) than the previous 120s — if the stack isn't
+ * healthy by then, radar's own compose_up will handle it anyway.
  */
 async function preStartRadarContainers(cwd: string): Promise<void> {
   const radarDir = join(
     process.env.HOME || process.env.USERPROFILE || "",
     ".radar",
   );
-  // Use bash (not sh) for reliable for-loop syntax. Wait up to 120s for API.
-  const upScript = `cd "${radarDir}" && docker compose up -d --quiet-pull --no-build 2>/dev/null; i=0; while [ $i -lt 24 ]; do status=$(docker inspect --format="{{.State.Health.Status}}" radar-api 2>/dev/null || echo "missing"); if [ "$status" = "healthy" ]; then exit 0; fi; sleep 5; i=$((i+1)); done; echo "[w] Radar API did not become healthy in time, proceeding anyway"`;
+  // Wait up to 60s for API health (12 retries × 5s).
+  const upScript = `cd "${radarDir}" && docker compose up -d --quiet-pull --no-build 2>/dev/null; i=0; while [ $i -lt 12 ]; do status=$(docker inspect --format="{{.State.Health.Status}}" radar-api 2>/dev/null || echo "missing"); if [ "$status" = "healthy" ]; then exit 0; fi; sleep 5; i=$((i+1)); done; echo "[w] Radar API did not become healthy in time, proceeding anyway"`;
 
   try {
     await runToolchainCommand("bash", ["-c", upScript], { cwd });
@@ -238,6 +241,8 @@ function readFindings(outFile: string, stdout: string): RadarFinding[] {
   return parseFindingsFromText(stdout);
 }
 
+export type ProgressCallback = (message: string) => void;
+
 /**
  * Run radar against a target directory and return its findings.
  *
@@ -247,12 +252,19 @@ function readFindings(outFile: string, stdout: string): RadarFinding[] {
 export async function runRadarAudit(options: {
   targetPath: string;
   cwd?: string;
+  onProgress?: ProgressCallback;
 }): Promise<RadarAuditResult> {
   const targetPath = options.targetPath;
   const cwd = options.cwd ?? targetPath;
+  const onProgress = options.onProgress;
 
   const radarCommand = await resolveRadarCommand(cwd);
   if (!radarCommand) throw new RadarNotInstalledError();
+
+  // Fire-and-forget: give containers a head start while we resolve the command
+  preStartRadarContainers(cwd);
+
+  onProgress?.("Starting Radar containers...");
 
   // Written by the radar container and copied back out to this path.
   const outFile = join(
@@ -268,6 +280,7 @@ export async function runRadarAudit(options: {
     let lastFailurePattern: string | undefined;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      onProgress?.("Scanning with Radar...");
       const result = await runToolchainCommand(
         radarCommand,
         ["-p", targetPath, "-o", outFile, "--fail-on", "high"],

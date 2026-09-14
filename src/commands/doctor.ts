@@ -7,6 +7,8 @@ import { checkWslToolchain } from "../lib/toolchain.js";
 import { resolveWalletPath } from "../lib/wallet.js";
 import { getActiveCluster, getConnection } from "../lib/connection.js";
 import { resolveProgramIdFromAnchorProject } from "../lib/anchorProject.js";
+import { getStalePresetWarning } from "../clusters/index.js";
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,6 +119,8 @@ async function checkWallet(): Promise<DoctorCheck> {
 /** Active cluster reachability (getSlot with timeout — same pattern as bake use). */
 async function checkCluster(): Promise<DoctorCheck> {
   const cluster = getActiveCluster();
+  const staleWarning = getStalePresetWarning(cluster);
+
   try {
     const connection = getConnection(cluster.rpcUrl);
     const slot = await Promise.race([
@@ -125,6 +129,16 @@ async function checkCluster(): Promise<DoctorCheck> {
         setTimeout(() => reject(new Error("RPC probe timed out")), RPC_TIMEOUT_MS),
       ),
     ]);
+
+    if (staleWarning) {
+      return {
+        name: "Cluster reachability",
+        category: "Wallet & Cluster",
+        status: "warn",
+        detail: `Active cluster: ${cluster.name} (${cluster.rpcUrl}) — reachable, slot ${slot}. ${staleWarning}`,
+      };
+    }
+
     return {
       name: "Cluster reachability",
       category: "Wallet & Cluster",
@@ -133,11 +147,12 @@ async function checkCluster(): Promise<DoctorCheck> {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const extra = staleWarning ? ` ${staleWarning}` : "";
     return {
       name: "Cluster reachability",
       category: "Wallet & Cluster",
       status: "fail",
-      detail: `Active cluster: ${cluster.name} (${cluster.rpcUrl}) — unreachable: ${msg}`,
+      detail: `Active cluster: ${cluster.name} (${cluster.rpcUrl}) — unreachable: ${msg}.${extra}`,
     };
   }
 }

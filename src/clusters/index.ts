@@ -47,3 +47,20 @@ export function listClusters(): string[] {
 export function clusterExists(name: string): boolean {
   return name.toLowerCase() in CLUSTERS;
 }
+
+/**
+ * Checks if a persisted cluster config uses a known preset name but has an RPC URL
+ * that differs from the preset's current definition in the CLUSTERS registry.
+ * Returns a warning string if stale, or null if up to date / custom.
+ */
+export function getStalePresetWarning(active: { name: string; rpcUrl: string }): string | null {
+  const lower = active.name.toLowerCase();
+  if (clusterExists(lower)) {
+    const preset = CLUSTERS[lower];
+    if (active.rpcUrl !== preset.endpoint) {
+      return `⚠ Your saved '${active.name}' cluster URL doesn't match the current preset — run \`bake use ${active.name}\` to refresh it.`;
+    }
+  }
+  return null;
+}
+

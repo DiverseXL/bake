@@ -21,6 +21,9 @@ pub struct RegisterDeploy<'info> {
     pub recipe_book: Account<'info, RecipeBook>,
 
     /// CHECK: has_one validates that this account is the stored authority.
+    #[account(
+        constraint = authority.key() == recipe_book.authority @ RecipeBookError::Unauthorized
+    )]
     pub authority: UncheckedAccount<'info>,
 
     // Space: 8 + 32 + 8 + (4 + 200) + (4 + 44) + 32 + 32 + 32 + 8 + 1 = 405 bytes.
@@ -68,6 +71,8 @@ pub fn handle(
     entry.timestamp = Clock::get()?.unix_timestamp;
     entry.bump = ctx.bumps.entry;
 
-    book.entry_count = index + 1;
+    book.entry_count = index
+        .checked_add(1)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
     Ok(())
 }
