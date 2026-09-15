@@ -78,7 +78,7 @@ bake logs -f                # watch it live
 | `bake stats [programId]` | Program activity (invocations, error rate, unique signers, CU) plus CookieScan network context |
 | `bake fork <programId>` | Clone a program (and optionally its accounts) from any cluster into a local validator |
 | `bake doctor` | Full environment health check (Node, git, WSL, wallet, cluster, balance, project) |
-| `bake dashboard [address]` | Open the web dashboard in your browser — `/wallet/<own-address>` with no arg, `/program/<address>` by default, `/wallet/<address>` with `--wallet`; `--ci` prints URL instead of launching browser |
+| `bake dashboard [address]` | Open the web dashboard in your browser — `/program/<address>` with arg, homepage without; `--ci` prints URL instead of launching browser |
 | `bake mcp` | Run bake as an MCP server for AI agents, with policy-gated write access |
 
 Every command supports `--ci` (plain, color-free output) and `--json` (structured output for scripting).
@@ -132,7 +132,7 @@ What's shipped today already turns Cookie Chain's cost/speed advantage into dail
 - **Multisig-first upgrades** — `bake deploy --authority multisig`, proposal/execution flow
 - **`bake agent init`** — scaffold a minimal agent wired to bake + [cookie-mcp](https://github.com/cookiechain/cookie-mcp)
 - **`bake top`** — deferred (would require chain-wide indexing infrastructure beyond a CLI's reasonable scope for now)
-- **`bake dashboard`** — open the companion web dashboard in your browser (`bakeacookie.vercel.app`), with address routing and CI-safe URL printing
+- **`bake dashboard`** — open the companion web dashboard in your browser (`bakeacookie.vercel.app`), with CI-safe URL printing
 - **Companion web dashboard** — wallet-connected visualization of your Recipe Book deploy history — live at [bakeacookie.vercel.app](https://bakeacookie.vercel.app)
 
 The goal: if you're deploying a program on Cookie Chain, you should be using bake.

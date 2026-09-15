@@ -1,36 +1,12 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { exec } from "node:child_process";
-import { readGlobalConfig } from "../config/index.js";
-import { resolveWalletPath } from "../lib/wallet.js";
-import { Keypair } from "@solana/web3.js";
-import { readFileSync } from "node:fs";
 import { logger } from "../lib/logger.js";
 
 const DASHBOARD_DEFAULT_URL = "https://bakeacookie.vercel.app";
 
 function getDashboardUrl(): string {
   return process.env.BAKE_DASHBOARD_URL || DASHBOARD_DEFAULT_URL;
-}
-
-/**
- * Resolve the public key of the local wallet (the same logic `bake whoami`
- * uses to discover the local keypair). Returns null if no wallet exists.
- */
-function resolveLocalPublicKey(): string | null {
-  const walletPath = resolveWalletPath();
-  if (!walletPath) return null;
-
-  try {
-    const raw = JSON.parse(readFileSync(walletPath, "utf-8"));
-    if (!Array.isArray(raw)) return null;
-    const bytes = Uint8Array.from(raw as number[]);
-    if (bytes.length !== 64) return null;
-    const keypair = Keypair.fromSecretKey(bytes);
-    return keypair.publicKey.toBase58();
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -61,7 +37,6 @@ function openInBrowser(url: string): void {
 }
 
 interface DashboardOpts {
-  wallet?: boolean;
   ci?: boolean;
   json?: boolean;
 }
@@ -74,34 +49,11 @@ async function runDashboard(
   const isJson = process.env.BAKE_JSON === "true";
   const isCi = process.env.BAKE_CI === "true" || opts.ci;
 
-  let url: string;
-
-  if (address) {
-    // Explicit address: /program/<address> by default, /wallet/<address> with --wallet
-    if (opts.wallet) {
-      url = `${baseUrl}/wallet/${address}`;
-    } else {
-      url = `${baseUrl}/program/${address}`;
-    }
-  } else {
-    // No address: resolve own wallet → /wallet/<own-address>
-    const publicKey = resolveLocalPublicKey();
-    if (!publicKey) {
-      if (isJson) {
-        console.log(JSON.stringify({ error: "No local wallet found" }));
-      } else {
-        logger.warn(
-          "No local wallet found. Run `bake login` first, or pass a program/wallet address:\n\n  " +
-            chalk.cyan("bake dashboard <address>") +
-            "\n  " +
-            chalk.cyan("bake dashboard <address> --wallet") +
-            "\n",
-        );
-      }
-      process.exit(1);
-    }
-    url = `${baseUrl}/wallet/${publicKey}`;
-  }
+  // Only /program/<address> exists on the live dashboard.
+  // No arg → homepage; with address → program page.
+  const url = address
+    ? `${baseUrl}/program/${address}`
+    : `${baseUrl}/`;
 
   if (isJson) {
     console.log(JSON.stringify({ url }));
@@ -123,14 +75,13 @@ export const dashboardCommand = new Command("dashboard")
   .description(
     "Open the bake dashboard in your browser (bakeacookie.vercel.app)",
   )
-  .argument("[address]", "program or wallet address to view")
-  .option("--wallet", "open as wallet view instead of program view")
+  .argument("[address]", "program address to view")
   .option("--ci", "print URL instead of opening browser")
   .option("--json", "output results as JSON")
   .action(
     async (
       address: string | undefined,
-      opts: { wallet?: boolean; ci?: boolean; json?: boolean },
+      opts: { ci?: boolean; json?: boolean },
     ) => {
       if (opts.json) process.env.BAKE_JSON = "true";
       if (opts.ci) process.env.BAKE_CI = "true";
