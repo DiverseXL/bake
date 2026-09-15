@@ -125,6 +125,21 @@ exists. Do not "simplify" this into register-everything-and-check-flags —
 see Section 10 for the full safety model (confirmation tokens, session
 circuit breaker, stderr audit log). Implemented in `src/commands/mcp.ts`,
 `src/lib/mcpServer.ts`, `src/lib/mcpPolicy.ts`.
+### 2.10 `--program` flag on `prove` and `rollback` — dashboard-generated commands
+Both `bake prove` and `bake rollback` accept an optional `--program <address>` flag
+(base58 PublicKey) that overrides Anchor.toml-based program ID detection. When passed,
+Anchor.toml parsing and `resolveProgramIdFromAnchorProject()` are skipped entirely — the
+command resolves only the program ID from the flag and uses `process.cwd()` for git
+operations. When omitted, existing cwd-based behavior is preserved (backward compatible).
+
+This exists because the dashboard (bakeacookie) generates copy-paste bake commands
+(e.g. `bake prove 0 --program 56Vj61z…`) that must work from any terminal directory,
+not just inside the specific Anchor project.
+
+**Important**: `--rebuild` (prove) and rollback still require a valid git repo in cwd,
+but they no longer require an Anchor.toml or `target/deploy/` structure when `--program`
+is provided.
+
 
 ---
 

@@ -70,9 +70,9 @@ bake logs -f                # watch it live
 | `bake init [name]` | Scaffold a new Anchor project pre-wired for Cookie Chain |
 | `bake deploy` | Build, deploy, hash, and register the deploy in the on-chain Recipe Book; `--require-audit` gates on `bake audit` |
 | `bake audit [path]` | Static analysis for Anchor programs (wraps Radar) — flags high-severity findings; `bake deploy --require-audit` gates deploys on a clean scan |
-| `bake rollback [entry]` | Rebuild and redeploy a previous Recipe Book entry |
+| `bake rollback [entry]` | Rebuild and redeploy a previous Recipe Book entry; `--program <addr>` to skip Anchor.toml detection |
 | `bake logs [programId]` | View recent or live-streamed (`-f`) program logs, with Anchor event decoding |
-| `bake prove [entry]` | Verify on-chain bytecode matches a Recipe Book entry; `--rebuild` for full reproducibility proof |
+| `bake prove [entry]` | Verify on-chain bytecode matches a Recipe Book entry; `--rebuild` for full proof; `--program <addr>` to skip Anchor.toml detection |
 | `bake diff [entry]` | Show what's changed (source and, with `--rebuild`, bytecode) since a given deploy |
 | `bake decode <sig\|--account>` | Decode a transaction or account using a program's IDL |
 | `bake stats [programId]` | Program activity (invocations, error rate, unique signers, CU) plus CookieScan network context |

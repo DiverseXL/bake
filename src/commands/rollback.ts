@@ -2,6 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import { createInterface } from "node:readline";
+import { PublicKey } from "@solana/web3.js";
 import { fail } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import {
@@ -77,6 +78,18 @@ function formatTimestamp(ts: number): string {
   return new Date(ts * 1000).toISOString();
 }
 
+/**
+ * Validate and parse a program ID string into a PublicKey.
+ * Returns null if the string is not a well-formed base58 PublicKey.
+ */
+function parseProgramId(address: string): PublicKey | null {
+  try {
+    return new PublicKey(address);
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
@@ -89,17 +102,33 @@ export const rollbackCommand = new Command("rollback")
     "[entryIndex]",
     "Recipe Book entry index to roll back to (default: undo last deploy)",
   )
+  .option(
+    "--program <address>",
+    "target program address (base58) — skip Anchor.toml detection and run from any directory",
+  )
   .option("--json", "output results as JSON")
   .option("--ci", "disable spinners/colors, force JSON-safe output")
   .option("--yes", "skip confirmation prompt")
   .action(
     async (
       entryIndexArg: string | undefined,
-      opts: { json?: boolean; ci?: boolean; yes?: boolean },
+      opts: { json?: boolean; ci?: boolean; yes?: boolean; program?: string },
     ) => {
       if (opts.json) process.env.BAKE_JSON = "true";
       if (opts.ci) process.env.BAKE_CI = "true";
       if (opts.yes) process.env.BAKE_YES = "true";
+
+      // Parse --program if provided
+      let programIdOverride: PublicKey | undefined;
+      if (opts.program) {
+        const parsed = parseProgramId(opts.program);
+        if (!parsed) {
+          fail(
+            `Invalid program address: "${opts.program}" — expected a well-formed base58 PublicKey.`,
+          );
+        }
+        programIdOverride = parsed;
+      }
 
       let entryIndex: number | undefined;
       if (entryIndexArg !== undefined) {
@@ -113,16 +142,31 @@ export const rollbackCommand = new Command("rollback")
       }
 
       try {
+        // Resolve working directory for git operations.
+        // If --program is passed, we skip Anchor.toml detection but still
+        // need a valid git repo cwd. Use process.cwd() directly.
+        // If --program is NOT passed, fall back to existing Anchor.toml detection.
         let cwd: string;
-        try {
-          cwd = resolveAnchorProjectCwd();
-        } catch (err) {
-          fail(err instanceof Error ? err.message : String(err));
+        if (programIdOverride) {
+          cwd = process.cwd();
+        } else {
+          try {
+            cwd = resolveAnchorProjectCwd();
+          } catch (err) {
+            fail(err instanceof Error ? err.message : String(err));
+          }
         }
 
-        const programId = resolveProgramIdFromAnchorProject(cwd);
-        if (!programId) {
-          fail("No program ID found in the Anchor project.");
+        // Resolve program ID (skip if --program was provided)
+        let programId: PublicKey;
+        if (programIdOverride) {
+          programId = programIdOverride;
+        } else {
+          const resolved = resolveProgramIdFromAnchorProject(cwd);
+          if (!resolved) {
+            fail("No program ID found in the Anchor project.");
+          }
+          programId = resolved;
         }
 
         const client = getRecipeBookClient();
@@ -204,7 +248,7 @@ export const rollbackCommand = new Command("rollback")
         const pipelineStep = startStep(
           `Rolling back to entry #${target.index} (${shortCommit(target.commit)})`,
         );
-        const result = await runRollbackPipeline(cwd, entryIndex);
+        const result = await runRollbackPipeline(cwd, entryIndex, programIdOverride);
         pipelineStep.succeed(
           `Rolled back to #${result.rolledBackToEntry}; new entry #${result.newEntryIndex}`,
         );

@@ -5,6 +5,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { type PublicKey } from "@solana/web3.js";
 import { resolveProgramIdFromAnchorProject } from "./anchorProject.js";
 import { runDeployPipeline } from "./deployPipeline.js";
 import {
@@ -41,18 +42,41 @@ export function resolveAnchorProjectCwd(cwd = process.cwd()): string {
   );
 }
 
+/**
+ * Run the rollback pipeline.
+ *
+ * @param cwd         Working directory (used for git operations and build).
+ * @param entryIndex  Recipe Book entry index to roll back to (optional).
+ * @param programId   Program ID override (e.g. from --program flag).
+ *                    When provided, Anchor.toml detection is skipped entirely —
+ *                    the cwd is used only for git operations and the build.
+ *                    When omitted, falls back to resolveProgramIdFromAnchorProject().
+ */
 export async function runRollbackPipeline(
   cwd: string,
   entryIndexArg?: number,
+  programId?: PublicKey,
 ): Promise<RollbackPipelineResult> {
-  const projectCwd = resolveAnchorProjectCwd(cwd);
-  const programId = resolveProgramIdFromAnchorProject(projectCwd);
-  if (!programId) {
-    throw new Error("No program ID found in the Anchor project.");
+  // If --program was passed, skip Anchor.toml resolution entirely.
+  // The cwd is still used for git checkout/deploy, but we don't require
+  // an Anchor project structure — just a valid git repo.
+  let projectCwd: string;
+  let resolvedProgramId: PublicKey;
+
+  if (programId) {
+    projectCwd = cwd;
+    resolvedProgramId = programId;
+  } else {
+    projectCwd = resolveAnchorProjectCwd(cwd);
+    const resolved = resolveProgramIdFromAnchorProject(projectCwd);
+    if (!resolved) {
+      throw new Error("No program ID found in the Anchor project.");
+    }
+    resolvedProgramId = resolved;
   }
 
   const client = getRecipeBookClient();
-  const raw = await client.getEntries(programId);
+  const raw = await client.getEntries(resolvedProgramId);
   const entries: RecipeBookEntry[] = raw.sort((a, b) => a.index - b.index);
 
   let targetIndex: number;
@@ -98,7 +122,7 @@ export async function runRollbackPipeline(
       rolledBackToCommit: target.commit,
       newEntryIndex: deployResult.entryIndex,
       deploySignature: deployResult.deploySignature,
-      programId: programId.toBase58(),
+      programId: resolvedProgramId.toBase58(),
     };
   } finally {
     try {

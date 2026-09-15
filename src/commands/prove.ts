@@ -3,6 +3,7 @@ import chalk from "chalk";
 import ora from "ora";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { PublicKey } from "@solana/web3.js";
 import { fail } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import {
@@ -68,6 +69,18 @@ function shortHash(hex: string): string {
   return hex.length > 16 ? hex.slice(0, 16) + "…" : hex;
 }
 
+/**
+ * Validate and parse a program ID string into a PublicKey.
+ * Returns null if the string is not a well-formed base58 PublicKey.
+ */
+function parseProgramId(address: string): PublicKey | null {
+  try {
+    return new PublicKey(address);
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // JSON output shape
 // ---------------------------------------------------------------------------
@@ -91,22 +104,34 @@ interface ProveJson {
 async function runProve(
   entryIndexArg?: number,
   doRebuild = false,
+  programIdOverride?: PublicKey,
 ): Promise<ProveJson> {
-  // ── 0. Locate Anchor project ─────────────────────────────────────────────
-  const cwd = existsSync(join(process.cwd(), "Anchor.toml"))
-    ? process.cwd()
-    : join(process.cwd(), "anchor");
-  const tomlPath = join(cwd, "Anchor.toml");
-  if (!existsSync(tomlPath)) {
-    fail("No Anchor.toml found — run this from your program's root directory.");
+  // ── 0. Resolve program ID ────────────────────────────────────────────────
+  // If --program was passed, use it directly and skip Anchor.toml detection.
+  // Otherwise, fall back to cwd-based Anchor.toml resolution (backward compat).
+  let programId: PublicKey;
+  let cwd: string;
+
+  if (programIdOverride) {
+    programId = programIdOverride;
+    cwd = process.cwd();
+  } else {
+    cwd = existsSync(join(process.cwd(), "Anchor.toml"))
+      ? process.cwd()
+      : join(process.cwd(), "anchor");
+    const tomlPath = join(cwd, "Anchor.toml");
+    if (!existsSync(tomlPath)) {
+      fail("No Anchor.toml found — run this from your program's root directory, or pass --program <address>.");
+    }
+
+    const resolved = resolveProgramIdFromAnchorProject(cwd);
+    if (!resolved) {
+      fail("No program ID found in the Anchor project.");
+    }
+    programId = resolved;
   }
 
   // ── 1. Fetch Recipe Book entries ─────────────────────────────────────────
-  const programId = resolveProgramIdFromAnchorProject(cwd);
-  if (!programId) {
-    fail("No program ID found in the Anchor project.");
-  }
-
   const client = getRecipeBookClient();
 
   const entriesStep = startStep("Fetching Recipe Book entries");
@@ -334,16 +359,32 @@ export const proveCommand = new Command("prove")
     "[entryIndex]",
     "Recipe Book entry index to verify (default: most recent)",
   )
+  .option(
+    "--program <address>",
+    "target program address (base58) — skip Anchor.toml detection and run from any directory",
+  )
   .option("--json", "output results as JSON")
   .option("--ci", "disable spinners/colors, force JSON-safe output")
   .option("--rebuild", "also rebuild from the recorded commit and compare hashes")
   .action(
     async (
       entryIndexArg: string | undefined,
-      opts: { json?: boolean; ci?: boolean; rebuild?: boolean },
+      opts: { json?: boolean; ci?: boolean; rebuild?: boolean; program?: string },
     ) => {
       if (opts.json) process.env.BAKE_JSON = "true";
       if (opts.ci) process.env.BAKE_CI = "true";
+
+      // Parse --program if provided
+      let programIdOverride: PublicKey | undefined;
+      if (opts.program) {
+        const parsed = parseProgramId(opts.program);
+        if (!parsed) {
+          fail(
+            `Invalid program address: "${opts.program}" — expected a well-formed base58 PublicKey.`,
+          );
+        }
+        programIdOverride = parsed;
+      }
 
       let entryIndex: number | undefined;
       if (entryIndexArg !== undefined) {
@@ -357,7 +398,7 @@ export const proveCommand = new Command("prove")
       }
 
       try {
-        const result = await runProve(entryIndex, opts.rebuild ?? false);
+        const result = await runProve(entryIndex, opts.rebuild ?? false, programIdOverride);
 
         if (isJsonMode()) {
           console.log(JSON.stringify(result));

@@ -43,3 +43,4 @@ pub struct Entry {
     pub timestamp: i64,
     pub bump: u8,
 }
+
