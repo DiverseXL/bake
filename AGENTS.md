@@ -566,6 +566,54 @@ are backlog for future work.
 | No pre-flight balance check before deploy/rollback | LOW | Raw Solana CLI error shown; could be friendlier |
 | `npm audit` — `bigint-buffer` (high), `toml` (2x high), `stream-json` (moderate), `uuid` (moderate) | LOW | Transitive dependencies via `@solana/web3.js`, `@coral-xyz/anchor`, `@nightlylabs/nightly-connect-solana`, and `cookie-mcp`. Detailed triage in Section 11.1 confirms none are exploitable in bake's execution model; no automated fix is possible without breaking core Anchor/web3.js bindings. |
 
+### 11.3 Recipe Book Radar audit verdicts (2026-09-15 — pre-mainnet)
+
+Full investigation of the 2 HIGH + 1 LOW Radar findings against the Recipe Book
+program, performed before any mainnet deploy. **Both HIGH findings are
+conservative false positives — not genuine vulnerabilities.** The program is
+safe for mainnet deploy with real funds.
+
+#### HIGH: "Init If Needed Reinitialization" — `initialize_recipe_book.rs:14`
+
+**Code:** `init_if_needed` on the `recipe_book` PDA account, with a handler-level
+`require!(book.target_program_id == Pubkey::default(), RecipeBookAlreadyExists)`.
+
+**Verdict: SAFE PATTERN.** Anchor's `init_if_needed` checks the 8-byte
+type-specific discriminator before deciding whether to initialize. If the PDA
+already exists (discriminator present), Anchor skips init entirely — no space
+allocation, no zeroing, no data modification. The handler then sees the
+non-default `target_program_id` and returns `RecipeBookAlreadyExists`. An
+attacker cannot force reinit because there is no `close` instruction in the
+program, and PDA accounts cannot be closed without a program instruction.
+Test 2 proves this: calling `initializeRecipeBook` twice on the same target
+correctly rejects with `RecipeBookAlreadyExists`. The `init-if-needed` feature
+flag is correctly enabled in `Cargo.toml`.
+
+#### HIGH: "Unconstrained UncheckedAccount" — `register_deploy.rs:24`
+
+**Code:** `authority: UncheckedAccount<'info>` with constraint
+`authority.key() == recipe_book.authority`, no `is_signer`.
+
+**Verdict: SAFE PATTERN.** The `authority` account is not the security gate.
+The real authorization is the `deployer` signer check in the handler:
+`require_keys_eq!(deployer.key(), book.authority, Unauthorized)`. An attacker
+passing a fake `authority` (any account with a matching pubkey) would still
+fail the `deployer` check unless they control the authority's private key —
+at which point they ARE the authority. The `authority` account exists for
+Anchor client-side convenience (IDL account resolution), not for security.
+The `recipe_book` account has its own `has_one = authority` constraint
+providing defense-in-depth. CHECK comment was updated (2026-09-15) to
+accurately document this — the old comment incorrectly claimed "has_one
+validates" on the authority account itself.
+
+#### LOW: "Unchecked Arithmetics" — `register_deploy.rs:71`
+
+**Code:** `book.entry_count = index.checked_add(1).ok_or(ProgramError::ArithmeticOverflow)?;`
+
+**Verdict: GENUINELY LOW, already handled correctly.** The increment uses
+`checked_add` with explicit overflow error handling. A `u64` can hold
+18.4 quintillion — overflow is not a realistic concern.
+
 ### 11.1 Detailed npm Audit Triage & Exploitability Analysis
 
 1. **`bigint-buffer <=1.1.5`** (HIGH — Buffer Overflow via `toBigIntLE()` / GHSA-3gc7-fjrx-p6mg):

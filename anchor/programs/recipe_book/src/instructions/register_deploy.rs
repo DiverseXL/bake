@@ -20,7 +20,8 @@ pub struct RegisterDeploy<'info> {
     )]
     pub recipe_book: Account<'info, RecipeBook>,
 
-    /// CHECK: has_one validates that this account is the stored authority.
+    /// CHECK: Key validated against recipe_book.authority via constraint.
+    /// Not a signer — the real auth gate is deployer's signer check in the handler.
     #[account(
         constraint = authority.key() == recipe_book.authority @ RecipeBookError::Unauthorized
     )]
