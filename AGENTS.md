@@ -172,6 +172,10 @@ src/
                             wallet.ts resolveWalletPath, connection.ts probe, anchorProject detection,
                             Node version gate) into a pass/warn/fail report; --json/--ci supported;
                             exit 0 for warnings, non-zero only for genuine failures
+    dashboard.ts           — opens the companion web dashboard (bakeacookie.vercel.app) in the
+                            default browser; [address] arg routes to /program/<addr> or /wallet/<addr>;
+                            no-arg resolves own wallet via resolveLocalWallet(); --ci prints URL only;
+                            BAKE_DASHBOARD_URL env var overrides base URL
     top.ts                — STUB (not yet implemented)
     audit.ts              — static analysis wrapper around Radar (Section 13);
                             NOT custom security heuristics

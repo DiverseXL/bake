@@ -21,6 +21,7 @@ import {
   mcpCommand,
   whoamiCommand,
   doctorCommand,
+  dashboardCommand,
 } from "./commands/index.js";
 
 import { VERSION } from "./lib/version.js";
@@ -81,6 +82,7 @@ program.addCommand(auditCommand);
 program.addCommand(mcpCommand);
 program.addCommand(whoamiCommand);
 program.addCommand(doctorCommand);
+program.addCommand(dashboardCommand);
 
 program.action(async () => {
   await loadGlobalConfig();

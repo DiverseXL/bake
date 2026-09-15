@@ -14,3 +14,4 @@ export { auditCommand } from "./audit.js";
 export { mcpCommand } from "./mcp.js";
 export { whoamiCommand } from "./whoami.js";
 export { doctorCommand } from "./doctor.js";
+export { dashboardCommand } from "./dashboard.js";

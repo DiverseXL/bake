@@ -194,6 +194,10 @@ async function runDeploy(opts: { requireAudit?: boolean }): Promise<void> {
   console.log(`  Entry index:       ${result.entryIndex}`);
   console.log(`  Cluster:           ${cluster.name} (${chalk.dim(cluster.rpcUrl)})`);
   console.log(`  Elapsed:           ${chalk.bold(formatElapsed(elapsedMs))}`);
+  if (!isCiMode() && !isJsonMode()) {
+    const dashboardBase = process.env.BAKE_DASHBOARD_URL || "https://bakeacookie.vercel.app";
+    console.log(`  Dashboard:         ${chalk.bold(`${dashboardBase}/program/${result.programId.toBase58()}`)}`);
+  }
   console.log();
 }
 
