@@ -10,10 +10,8 @@
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { createRequire } from "node:module";
 import { CLUSTERS } from "../clusters/index.js";
-
-const require = createRequire(import.meta.url);
+import { VERSION } from "./version.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,7 +103,7 @@ async function getClient(): Promise<Client> {
   });
 
   const client = new Client(
-    { name: "bake", version: "0.1.0" },
+    { name: "bake", version: VERSION },
     { capabilities: {} },
   );
 

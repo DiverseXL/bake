@@ -36,7 +36,7 @@ import { resolveWalletPath } from "./wallet.js";
 // ---------------------------------------------------------------------------
 
 const CONFIRMATION_TTL_MS = 5 * 60 * 1000;
-const VERSION = "0.1.0";
+import { VERSION } from "./version.js";
 
 type PendingAction =
   | {

@@ -23,7 +23,7 @@ import {
   doctorCommand,
 } from "./commands/index.js";
 
-const VERSION = "0.1.0";
+import { VERSION } from "./lib/version.js";
 
 // Global option values (set before subcommand actions run).
 export let globalCi = false;
