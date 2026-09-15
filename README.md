@@ -68,7 +68,7 @@ bake logs -f                # watch it live
 | `bake use [cluster\|url]` | Switch active cluster (`cookie`, `mainnet`, `devnet`, or any RPC URL) |
 | `bake whoami` | Show active wallet(s) and cluster |
 | `bake init [name]` | Scaffold a new Anchor project pre-wired for Cookie Chain |
-| `bake deploy` | Build, deploy, hash, and register the deploy in the on-chain Recipe Book; `--require-audit` gates on `bake audit` |
+| `bake deploy` | Build, deploy, hash, and register the deploy in the on-chain Recipe Book; `--require-audit` gates on `bake audit`. After deploying, view your deploy history on the [dashboard](https://bakeacookie.vercel.app/program/<program-id>) |
 | `bake audit [path]` | Static analysis for Anchor programs (wraps Radar) — flags high-severity findings; `bake deploy --require-audit` gates deploys on a clean scan |
 | `bake rollback [entry]` | Rebuild and redeploy a previous Recipe Book entry; `--program <addr>` to skip Anchor.toml detection |
 | `bake logs [programId]` | View recent or live-streamed (`-f`) program logs, with Anchor event decoding |
@@ -131,13 +131,13 @@ What's shipped today already turns Cookie Chain's cost/speed advantage into dail
 - **Multisig-first upgrades** — `bake deploy --authority multisig`, proposal/execution flow
 - **`bake agent init`** — scaffold a minimal agent wired to bake + [cookie-mcp](https://github.com/cookiechain/cookie-mcp)
 - **`bake top`** — deferred (would require chain-wide indexing infrastructure beyond a CLI's reasonable scope for now)
-- **Companion web dashboard** — wallet-connected (Nightly) visualization of your Recipe Book deploy history — see [bake-dashboard](#) *(link once live)*
+- **Companion web dashboard** — wallet-connected (Nightly) visualization of your Recipe Book deploy history — live at [bakeacookie.vercel.app](https://bakeacookie.vercel.app)
 
 The goal: if you're deploying a program on Cookie Chain, you should be using bake.
 
 ## Companion dashboard
 
-A web dashboard for visualizing Recipe Book deploy history, connected via Nightly wallet, lives in a separate repository: **[bake-dashboard](#)** *(link once created)*.
+A web dashboard for visualizing Recipe Book deploy history, connected via Nightly wallet: **[bakeacookie.vercel.app](https://bakeacookie.vercel.app)**. View any program's deploy history at `/program/<program-id>`.
 
 ## Contributing
 
