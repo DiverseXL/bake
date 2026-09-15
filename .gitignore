@@ -8,3 +8,7 @@ dist/
 test-ledger/
 .tmp-init*/
 prewarm/
+*.tgz
+patch.cjs
+patchAgents.cjs
+testHash.ts
