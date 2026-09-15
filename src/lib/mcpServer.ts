@@ -30,13 +30,13 @@ import {
   type RollbackPipelineResult,
 } from "./rollbackPipeline.js";
 import { resolveWalletPath } from "./wallet.js";
+import { VERSION } from "./version.js";
 
 // ---------------------------------------------------------------------------
 // Constants / types
 // ---------------------------------------------------------------------------
 
 const CONFIRMATION_TTL_MS = 5 * 60 * 1000;
-import { VERSION } from "./version.js";
 
 type PendingAction =
   | {
