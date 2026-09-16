@@ -81,6 +81,31 @@ export async function runDeployPipeline(cwd: string): Promise<DeployPipelineResu
   const cluster = getActiveCluster();
   const wallet = await loadLocalWallet();
   const walletPath = getWalletPath();
+
+  // -----------------------------------------------------------------------
+  // Point the Solana CLI at the active cluster's RPC *before* anchor deploy.
+  //
+  // Why this is needed: anchor deploy internally shells out to
+  //   `solana program deploy`, which reads its RPC URL from
+  //   ~/.config/solana/cli/config.yml — NOT from ANCHOR_PROVIDER_URL or
+  //   --provider.cluster.  On a fresh WSL session the Solana CLI config
+  //   defaults to http://127.0.0.1:8899 (localnet), so every deploy would
+  //   target localhost no matter what we told anchor.
+  //
+  // `solana config set --url <url>` persists the change for the lifetime
+  //   of the WSL-side config file.  This is fine because:
+  //   1. bake never deploys to localnet (local testing uses `anchor test`).
+  //   2. The config is only modified right before a deploy/rollback.
+  //   3. The Solana CLI config is WSL-side only (Windows-side is separate).
+  // -----------------------------------------------------------------------
+  logger.info(`Configuring Solana CLI → ${cluster.rpcUrl}`);
+  await runToolchainOrThrow(
+    "solana",
+    ["config", "set", "--url", cluster.rpcUrl],
+    cwd,
+    {},
+  );
+
   logger.info(`Deploying ${programName} to ${cluster.name}`);
   const deploy = await runToolchainOrThrow(
     "anchor",

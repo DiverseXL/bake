@@ -140,6 +140,25 @@ not just inside the specific Anchor project.
 but they no longer require an Anchor.toml or `target/deploy/` structure when `--program`
 is provided.
 
+### 2.11 `solana config set --url` MUST precede every real deploy/rollback (2026-09-16)
+`anchor deploy` internally delegates to `solana program deploy`, which reads its
+RPC URL from the Solana CLI config file (`~/.config/solana/cli/config.yml`) —
+**NOT** from `ANCHOR_PROVIDER_URL` or `--provider.cluster`.  On a fresh WSL
+session this config defaults to `http://127.0.0.1:8899` (localnet), so every
+`anchor deploy` would silently target localhost no matter what bake tells it.
+
+`src/lib/deployPipeline.ts` therefore runs `solana config set --url <cluster.rpcUrl>`
+via `runToolchainOrThrow()` **before** the `anchor deploy` call.  This persists
+for the lifetime of the WSL-side config file, which is fine because:
+- bake never deploys to localnet (local testing uses `anchor test`).
+- The Solana CLI config is WSL-side only — the Windows-side config is separate.
+- The config change happens right before the deploy and is idempotent.
+
+**Do not remove the `solana config set` call to "simplify" the pipeline.**
+This was discovered after a real mainnet deploy attempt targeted localhost,
+failing with connection errors (no funds spent, but the deploy was blocked).
+See Section 6 for the failure signature.
+
 
 ---
 
@@ -183,7 +202,9 @@ src/
     toolchain.ts            — cross-platform Anchor/Solana subprocess runner (Section 2.3);
                               runToolchainCommand (buffered), spawnToolchainForeground (live streaming
                               for long-running processes like solana-test-validator)
-    deployPipeline.ts        — THE ONE build/deploy/hash/register implementation (Section 2.6)
+    deployPipeline.ts        — THE ONE build/deploy/hash/register implementation (Section 2.6);
+                              also runs `solana config set --url` before deploy (Section 2.11)
+                              to ensure the Solana CLI points at the active cluster, not localhost
     rollbackPipeline.ts      — THE ONE rollback implementation (checkout → deployPipeline → restore)
     recipeBook.ts             — RecipeBookClient interface, MockRecipeBookClient,
                               RealRecipeBookClient. getRecipeBookClient() factory:
@@ -282,6 +303,7 @@ Anchor directly, to keep the codebase consistent.
 | `error[E0432]: unresolved import 'crate'` at `#[program]` macro | Anchor version mismatch (anchor-cli vs anchor-lang / generated client module paths after a major Anchor version bump) | Confirm `anchor-lang` version in `Cargo.toml` matches installed `anchor-cli` exactly; may need re-exporting generated client account modules at crate scope for post-1.0 Anchor |
 | `librustc_driver-*.so: cannot open shared object file` | Corrupted/partial platform-tools cache from an interrupted download | `rm -rf ~/.cache/solana/<version>`, let it redownload fully, uninterrupted |
 | Deploy retries into a stale buffer, fails oddly | `anchor deploy` auto-resumes into a leftover upgrade-buffer from an earlier failed attempt | `solana program close <buffer-address>`, delete the local `*-upgrade-buffer.json`, redeploy fresh |
+| `anchor deploy` targets `127.0.0.1:8899` despite `bake use <cluster>` | `solana program deploy` (called internally by `anchor deploy`) reads its RPC URL from `~/.config/solana/cli/config.yml`, ignoring `ANCHOR_PROVIDER_URL` and `--provider.cluster` — the WSL-side config defaults to localnet | `deployPipeline.ts` runs `solana config set --url <cluster.rpcUrl>` before deploy; see Section 2.11 |
 
 ---
 
