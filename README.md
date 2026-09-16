@@ -115,7 +115,7 @@ flowchart TD
 ## Architecture
 
 - `src/commands/` — one file per CLI command
-- `src/lib/deployPipeline.ts` — the single, shared build→deploy→hash→register implementation used by both `deploy` and `rollback`
+- `src/lib/deployPipeline.ts` — the single, shared build→deploy→hash→register implementation used by both `deploy` and `rollback`; also configures the Solana CLI target (`solana config set --url`) before every real deploy to prevent Anchor from silently targeting localhost
 - `src/lib/toolchain.ts` — cross-platform Anchor/Solana subprocess runner, including the Windows→WSL relay
 - `src/lib/recipeBook.ts` — Recipe Book client (real, on-chain) with a mock implementation for testing command orchestration
 - `src/idl/recipe_book.json` — hand-written, live-validated IDL (a durable fallback alongside auto-generation)
