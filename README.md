@@ -15,6 +15,14 @@
 
 ---
 
+## Live on Cookie Chain
+
+The Recipe Book program is deployed and verified on Cookie Chain mainnet:
+
+- **Program ID:** `56Vj61zFW4hHV6wdjnisrHtVwWDqyjixjpBgnoRJvzxL`
+- **Explorer:** https://cookiescan.io/address/56Vj61zFW4hHV6wdjnisrHtVwWDqyjixjpBgnoRJvzxL
+- **Status:** Executable, upgradeable BPF program
+
 ## Why bake exists
 
 [Cookie Chain](https://www.cookiechain.wtf) is a fast, cheap, community-owned SVM blockchain — programs deploy for pennies with sub-second finality. But developer tooling on Cookie Chain today is almost entirely vanilla Solana CLI pointed at a different RPC endpoint. There's no deployment orchestration, no on-chain deploy history, no casual rollback, and no security-gated deploy flow — gaps the ecosystem's own roadmap lists as future work.
@@ -139,7 +147,7 @@ The goal: if you're deploying a program on Cookie Chain, you should be using bak
 
 ## Companion dashboard
 
-A web dashboard for visualizing Recipe Book deploy history, connected via Nightly wallet: **[bakeacookie.vercel.app](https://bakeacookie.vercel.app)**. View any program's deploy history at `/program/<program-id>`.
+A web dashboard for visualizing Recipe Book deploy history, connected via Nightly wallet: **[bakeacookie.vercel.app](https://bakeacookie.vercel.app)**. View the live Recipe Book program's deploy history at [/program/56Vj61zFW4hHV6wdjnisrHtVwWDqyjixjpBgnoRJvzxL](https://bakeacookie.vercel.app/program/56Vj61zFW4hHV6wdjnisrHtVwWDqyjixjpBgnoRJvzxL).
 
 ## Contributing
 
