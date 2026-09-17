@@ -4,7 +4,30 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { loadConfigs } from "./config/index.js";
 import { printBanner } from "./lib/banner.js";
-import {
+import { VERSION } from "./lib/version.js";
+
+// Suppress the benign "bigint: Failed to load bindings" warning from
+// bigint-buffer (a transitive dependency via @solana/web3.js). The native
+// C++ addon fails to load on most environments; bigint-buffer falls back to
+// a pure-JS implementation automatically — this is the SAFER path, since
+// the native addon has a known buffer overflow vulnerability
+// (GHSA-3gc7-fjrx-p6mg, fixed only in >=2.0.0 which web3.js v1 doesn't
+// use). See AGENTS.md §11.1 for the full audit triage.
+// The message fires at require() time (module body), so we must patch
+// console.warn before any import that transitively pulls in @solana/web3.js.
+const _origWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+  if (
+    typeof args[0] === "string" &&
+    args[0].includes("Failed to load bindings")
+  )
+    return;
+  _origWarn(...args);
+};
+
+// Dynamic import of command modules (which transitively load @solana/web3.js
+// and trigger bigint-buffer) so the console.warn patch above runs first.
+const {
   initCommand,
   loginCommand,
   useCommand,
@@ -22,9 +45,10 @@ import {
   whoamiCommand,
   doctorCommand,
   dashboardCommand,
-} from "./commands/index.js";
+} = await import("./commands/index.js");
 
-import { VERSION } from "./lib/version.js";
+// Restore original console.warn so bake's own output is unaffected.
+console.warn = _origWarn;
 
 // Global option values (set before subcommand actions run).
 export let globalCi = false;
