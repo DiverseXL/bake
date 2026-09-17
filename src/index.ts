@@ -91,4 +91,10 @@ program.action(async () => {
 
 // Before any command logic. printBanner() no-ops on --ci/--json and non-TTY.
 printBanner();
-program.parse(process.argv);
+// parseAsync keeps the process alive until async command actions finish
+// (browser spawn, etc.). parse() returns immediately and can exit first.
+program.parseAsync(process.argv).catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(chalk.red(`\nError: ${message}\n`));
+  process.exit(1);
+});
