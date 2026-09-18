@@ -46,6 +46,7 @@ const {
   doctorCommand,
   dashboardCommand,
   agentCommand,
+  sessionCommand,
 } = await import("./commands/index.js");
 
 // Restore original console.warn so bake's own output is unaffected.
@@ -109,6 +110,7 @@ program.addCommand(whoamiCommand);
 program.addCommand(doctorCommand);
 program.addCommand(dashboardCommand);
 program.addCommand(agentCommand);
+program.addCommand(sessionCommand);
 
 program.action(async () => {
   await loadGlobalConfig();

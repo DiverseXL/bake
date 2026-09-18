@@ -36,6 +36,8 @@ The Recipe Book program is deployed and verified on Cookie Chain mainnet:
 - **Cheap, honest rollback.** `bake rollback` rebuilds and redeploys a previous commit, verified with a git-state safety net that's been tested against deliberate mid-operation failures — your working directory is never left in a broken state.
 - **Cryptographic proof, not just trust.** `bake prove` verifies that what's actually running on-chain matches what your Recipe Book says was deployed, using real ELF-binary hash comparison — not a guess.
 - **Agent-native.** `bake mcp` exposes bake's capabilities to AI agents over the Model Context Protocol, with a safety-first design: write operations (deploy, rollback) are completely invisible to an agent unless an explicit policy file enables them, and even then require a second confirming call before executing.
+- **Agent-ready scaffold.** `bake agent init` sets up an AI-agent project pre-wired for `bake mcp` (and optional `cookie-mcp`) with a strict read-only policy by default and zero private keys in the scaffold.
+- **Local session workspaces.** `bake session` spins up disposable, isolated workspaces with ephemeral keypairs and optional local validators — rehearse deploys locally without touching your global wallet or cluster configuration.
 - **Security-gated deploys, honestly sourced.** `bake audit` runs [Radar](https://github.com/auditware/radar) — Auditware's static analyzer for Anchor/Rust contracts, the tool the Solana docs recommend — and `bake deploy --require-audit` refuses to ship critical or high findings. bake ships **no hand-rolled security heuristics**: every finding is Radar's, labelled "powered by Radar".
 - **Genuinely cross-chain, not just architecturally.** The full pipeline (deploy, prove, logs, stats) has been tested end-to-end on Solana devnet, not just Cookie Chain, with zero code changes required.
 
@@ -44,6 +46,8 @@ The Recipe Book program is deployed and verified on Cookie Chain mainnet:
 ```bash
 npm install -g bakeacookie
 ```
+
+> **Note:** During install you may see `npm warn` messages about peer dependency conflicts (e.g. `@coral-xyz/anchor` version mismatches). These come from a transitive dependency inside `cookie-mcp` and are already resolved automatically by npm — reviewed and confirmed safe as part of a full security audit (see AGENTS.md §11.1). No action needed.
 
 The package is published as `bakeacookie` (the shorter names were already taken), but the command you run is just:
 
@@ -88,8 +92,80 @@ bake logs -f                # watch it live
 | `bake doctor` | Full environment health check (Node, git, WSL, wallet, cluster, balance, project) |
 | `bake dashboard [address]` | Open the web dashboard in your browser — `/program/<address>` with arg, homepage without; `--ci` prints URL instead of launching browser |
 | `bake mcp` | Run bake as an MCP server for AI agents, with policy-gated write access |
+| `bake agent init [name]` | Scaffold an AI-agent project pre-wired to `bake mcp` (read-only policy by default); `--with-cookie-mcp` / `--no-cookie-mcp`, `--force`, `-y` |
+| `bake session open` | Start a disposable local workspace (ephemeral keypair; optional local validator); `--port`, `--no-validator`, `--workspace <path>`, `--force`, `-y` |
+| `bake session status` | Show the active session (ID, keypair pubkey, RPC URL, validator PID and status) |
+| `bake session deploy` | Deploy the current Anchor project through the active session using process-local overrides; `-y` |
+| `bake session close` | Tear down validator, delete ephemeral keys, and clear session state; `-y`, `--keep-workspace` |
 
 Every command supports `--ci` (plain, color-free output) and `--json` (structured output for scripting).
+
+## Sessions (local disposable workspaces)
+
+`bake session` creates disposable, local deploy workspaces so you can rehearse builds and deploys with an ephemeral keypair and an optional isolated `solana-test-validator`, without modifying your global wallet or active cluster config (`~/.bake/config.json`).
+
+### Typical workflow
+
+```bash
+# 1. Open a new session (generates ephemeral keypair + starts local validator on port 8899)
+bake session open
+
+# 2. Check active session details (pubkey, RPC, validator PID)
+bake session status
+
+# 3. Deploy an Anchor project into the active session
+bake session deploy
+
+# 4. Tear down validator and purge ephemeral keys when done
+bake session close -y
+```
+
+### Key behaviors & flags
+
+- **Process-local overrides:** `bake session deploy` applies temporary environment overrides (`ANCHOR_PROVIDER_URL`, `ANCHOR_WALLET`, `BAKE_RPC_URL`) strictly for the duration of the deploy pipeline and restores process state afterward. Your global `bake use` setting is untouched.
+- **Keypair-only sessions (`--no-validator`):** Run `bake session open --no-validator` to generate an isolated ephemeral keypair without launching a local validator process (e.g. for testing against an existing RPC).
+- **Custom port & workspace:** Use `--port <number>` (default `8899`) to avoid port collisions, and `--workspace <path>` (default `cwd`) to specify which project directory to bind to the session.
+- **Single active session:** Only one session can be active at a time. If an existing session is running, close it first with `bake session close` or pass `--force` to `bake session open`.
+- **Windows / WSL:** Background validators run through the WSL toolchain relay. Always close sessions cleanly to avoid orphaned validator processes.
+
+## AI agents (`bake agent init` & `bake mcp`)
+
+`bake agent init [name]` scaffolds a complete, minimal AI-agent project configured to communicate with `bake mcp` over stdio via the Model Context Protocol (MCP).
+
+```bash
+bake agent init my-agent
+cd my-agent
+```
+
+### Project structure
+
+```
+my-agent/
+├── README.md                # Agent setup & write-access guide
+├── package.json             # Minimal metadata + mcp:bake script
+├── .gitignore               # Ignores .env, keypairs (*.json), .bake/
+├── policy.example.json      # Read-only MCP policy (allowWrites: false)
+├── prompts/
+│   └── system.md            # System prompt with tool definitions & safety rules
+└── mcp/
+    ├── mcp.json             # MCP server config for Cursor / Claude Desktop
+    └── README.md            # Integration guide for AI editors
+```
+
+### Connecting your AI editor
+
+1. **Cursor:** Copy the `mcpServers` object from `mcp/mcp.json` into `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global).
+2. **Claude Desktop:** Merge the server definition into `claude_desktop_config.json` (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows).
+3. **Verify:** Ask your assistant `run bake_whoami` to inspect the active wallet and cluster.
+
+### Safety model & write permissions
+
+- **Read-only by default:** The generated `policy.example.json` sets `"allowWrites": false`. Write tools (`bake_deploy`, `bake_rollback`) are **completely unregistered** from the MCP tool list until write access is explicitly enabled.
+- **Enabling writes:** Copy `policy.example.json` to `.bake/mcp-policy.json` (or pass `--policy <path>`) and set `"allowWrites": true`.
+- **Confirmation tokens:** When writes are enabled, `requireConfirmation: true` enforces a two-step confirmation flow: write tools return a preview with a 5-minute confirmation token, and the action only executes when `bake_confirm_action` is called with that token.
+- **No private keys in scaffold:** The scaffold contains **no private keys or seed phrases**. Agent tools use local wallets loaded from disk by the bake CLI.
+- **cookie-mcp integration:** Included by default in `mcp/mcp.json` for read-only token and liquidity lookups (DEX prices, pools). Omit with `--no-cookie-mcp` if not needed.
+- **Prerequisites:** Node.js ≥ 22 and `bake` installed globally (`npm install -g bakeacookie`).
 
 ## How it works
 
@@ -136,11 +212,8 @@ flowchart TD
 What's shipped today already turns Cookie Chain's cost/speed advantage into daily muscle memory. Where this is headed:
 
 - **`bake fork` enhancements** — deeper Solana mainnet rehearsal workflows
-- **`bake doctor` → `bake session`** — disposable, ephemeral deploy workspaces (open → deploy → close/settle)
 - **Multisig-first upgrades** — `bake deploy --authority multisig`, proposal/execution flow
-- **`bake agent init`** — scaffold a minimal agent wired to bake + [cookie-mcp](https://github.com/cookiechain/cookie-mcp)
-- **`bake top`** — deferred (would require chain-wide indexing infrastructure beyond a CLI's reasonable scope for now)
-- **`bake dashboard`** — open the companion web dashboard in your browser (`bakeacookie.vercel.app`), with CI-safe URL printing
+- **`bake top`** — deferred (needs chain-wide indexing; not in CLI v0)
 - **Companion web dashboard** — wallet-connected visualization of your Recipe Book deploy history — live at [bakeacookie.vercel.app](https://bakeacookie.vercel.app)
 
 The goal: if you're deploying a program on Cookie Chain, you should be using bake.

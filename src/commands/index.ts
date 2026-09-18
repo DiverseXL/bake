@@ -16,3 +16,4 @@ export { whoamiCommand } from "./whoami.js";
 export { doctorCommand } from "./doctor.js";
 export { dashboardCommand } from "./dashboard.js";
 export { agentCommand } from "./agent.js";
+export { sessionCommand } from "./session.js";
