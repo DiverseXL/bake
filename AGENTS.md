@@ -197,6 +197,8 @@ src/
     top.ts                — STUB (not yet implemented)
     audit.ts              — static analysis wrapper around Radar (Section 13);
                             NOT custom security heuristics
+    agent.ts               — parent `agent` command + `init` subcommand for scaffolding
+                            AI-agent projects pre-wired for bake MCP (Section 14)
   lib/
     connection.ts          — getConnection()/getActiveCluster(), v1 @solana/web3.js ONLY (see 3.1)
     toolchain.ts            — cross-platform Anchor/Solana subprocess runner (Section 2.3);
@@ -229,6 +231,10 @@ src/
     anchorProject.ts               — resolveProgramIdFromAnchorProject(), shared program-ID
                                     resolution logic
     banner.ts                      — cookie ASCII banner (skipped for mcp / --ci / --json / non-TTY)
+    agentScaffold.ts                — scaffold file generation for `bake agent init` (Section 14);
+                                      config-only, no on-chain logic; writes 7 files (README,
+                                      package.json, .gitignore, policy.example.json, system.md,
+                                      mcp.json, mcp/README.md)
     errors.ts, logger.ts             — friendly-error formatting, --ci/--json-aware output
 idl/
   recipe_book.json                    — hand-written IDL, see Section 2.2
@@ -659,6 +665,8 @@ validates" on the authority account itself.
    - *Exploitability:* **GENUINELY NOT EXPLOITABLE**. Vulnerability strictly applies to deterministic UUID generation (`v3`, `v5`, `v6`) when an explicit out-of-bounds destination Buffer is supplied. Nightly Connect and Jayson use random `v4` UUIDs for session and RPC request tracking.
    - *Action:* Safe to ignore.
 
+**Note on `npm warn` peer-dependency messages during global install:** Users will see `npm warn` about peer dependency conflicts (typically `@coral-xyz/anchor` version mismatches from `cookie-mcp`'s transitive deps) when running `npm install -g bakeacookie`. This is cosmetic — npm resolves it automatically and the conflict is not exploitable (items 2–3 above cover the `toml` transitive dep from `@coral-xyz/anchor`). This is documented in the README's install section so users aren't alarmed by it.
+
 ### 11.2 Config write locking (resolved 2026-09-11)
 
 Two `bake` processes running at once (a background `bake fork` validator plus a
@@ -786,3 +794,71 @@ parsing logic in either one (same rule as Section 2.6).
 Radar is **never** silently auto-installed: that is a deliberate/visible step
 for a security scanner, unlike cookie-mcp's silent-spawn read-only client
 (Section 10.7). A missing Radar prints the install command and exits 2.
+
+---
+
+## 14. `bake agent init` — AI agent scaffold (config-only, no on-chain logic)
+
+`bake agent init [name]` creates a minimal AI-agent project pre-wired to
+communicate with `bake mcp` (and optionally `cookie-mcp`) over MCP stdio.
+This is **filesystem + config only** — no on-chain transactions, no new
+deploy logic, no wallet generation.
+
+### Key constraints (do not violate)
+
+1. **Read-only by default.** The generated `policy.example.json` has
+   `allowWrites: false`. Write tools (`bake_deploy`, `bake_rollback`)
+   remain unregistered until the user deliberately copies the policy and
+   sets `allowWrites: true`. Same safety model as `bake mcp` (Section 10).
+2. **No private keys in the scaffold.** Never write keypairs, seeds, or
+   `COOKIE_PRIVATE_KEY` into generated files. The README documents which
+   env vars the user must set themselves.
+3. **Config-only.** The scaffold only generates configuration files that
+   **invoke** the already-published `bake mcp` binary and optionally
+   `npx cookie-mcp`. It does not reimplement any MCP server or deploy logic.
+4. **Reusable patterns.** Mirrors `src/commands/init.ts` for name
+   sanitization, directory creation, `--ci`/`--json`/`--yes` behavior,
+   friendly errors, and optional interactive extras only when
+   `process.stdout.isTTY && !BAKE_CI && !BAKE_JSON`.
+
+### Generated files
+
+```
+<name>/
+├── README.md              # Prerequisites, quick start, Cursor/Claude wiring, write guide
+├── package.json           # Minimal metadata + mcp:bake script
+├── .gitignore             # .env, node_modules, keypairs, .bake/
+├── policy.example.json    # allowWrites: false by default
+├── prompts/system.md      # Agent safety rules + tool catalog
+└── mcp/
+    ├── mcp.json           # MCP server config (bake + optional cookie-mcp)
+    └── README.md          # Where to paste for Cursor, Claude Desktop, etc.
+```
+
+### CLI surface
+
+```text
+bake agent init [name]    (default: bake-agent)
+  --force                 Overwrite if directory exists
+  -y, --yes               Skip interactive prompts
+  --with-cookie-mcp       Include cookie-mcp in MCP config (default: true)
+  --no-cookie-mcp         Exclude cookie-mcp
+```
+
+### Implementation files
+
+- `src/commands/agent.ts` — parent `agent` command + `init` subcommand
+- `src/lib/agentScaffold.ts` — scaffold file generation (all template
+  strings in TypeScript, no opaque binary assets)
+
+### Safety notes
+
+- The MCP config points to `bake mcp --policy ./policy.example.json`,
+  which auto-discovers the policy relative to the agent project root.
+- cookie-mcp is included by default but has no wallet key — it is
+  strictly read-only unless the user adds `COOKIE_PRIVATE_KEY` out of band.
+- The optional `@cookiechain/skill` install prompt (same as `bake init`,
+  Section 12) is gated behind TTY + non-CI + non-JSON + non-`--yes`.
+  Failure is caught and printed as a warning; the scaffold is never affected.
+- `writeFileEnsuringParent()` in `agentScaffold.ts` uses `path.dirname()`
+  (not string slicing) for cross-platform path handling.
