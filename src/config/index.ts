@@ -7,6 +7,7 @@ import {
   closeSync,
   unlinkSync,
   statSync,
+  copyFileSync,
 } from "fs";
 import { join } from "path";
 import { homedir } from "os";
@@ -266,6 +267,34 @@ export function updateGlobalConfig(
 ): void {
   const acquired = acquireGlobalConfigLock();
   try {
+    // Back up corrupted config before overwriting — if readGlobalConfig()
+    // returns null, the file exists but is unparseable. We must preserve
+    // the raw bytes so the user can manually recover walletPath etc.
+    if (existsSync(GLOBAL_CONFIG_PATH)) {
+      try {
+        const raw = readFileSync(GLOBAL_CONFIG_PATH, "utf-8");
+        JSON.parse(raw); // Will throw if corrupted
+        globalConfigSchema.parse(JSON.parse(raw)); // Will throw if schema-invalid
+      } catch {
+        // Config is corrupted or schema-invalid — back it up
+        const timestamp = Date.now();
+        const backupPath = `${GLOBAL_CONFIG_PATH}.corrupted.${timestamp}`;
+        try {
+          copyFileSync(GLOBAL_CONFIG_PATH, backupPath);
+          console.error(
+            `Warning: ${GLOBAL_CONFIG_PATH} is corrupted — backed up to ${backupPath}. ` +
+            "The backup contains the raw corrupted content for manual recovery.",
+          );
+        } catch (backupErr) {
+          console.error(
+            `Warning: ${GLOBAL_CONFIG_PATH} is corrupted and could not be backed up: ` +
+            `${backupErr instanceof Error ? backupErr.message : String(backupErr)}. ` +
+            "Proceeding with fresh config — original data is lost.",
+          );
+        }
+      }
+    }
+
     const current =
       (readGlobalConfig() as unknown as Record<string, unknown> | null) ?? {};
     const draft = { ...current };

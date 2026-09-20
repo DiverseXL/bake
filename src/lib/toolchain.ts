@@ -147,7 +147,7 @@ export async function runToolchainCommand(
     WSL_DISTRO,
     "-e",
     "bash",
-    "-lc",
+    "-c",
     innerCommand,
   ]);
   if (result.exitCode !== 0) {
@@ -240,7 +240,7 @@ export function spawnToolchainForeground(
           WSL_DISTRO,
           "-e",
           "bash",
-          "-lc",
+          "-c",
           innerCommand,
         ], {
           stdio: "inherit",

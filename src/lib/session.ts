@@ -17,7 +17,7 @@ import {
   chmodSync,
   readdirSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { ed25519 } from "@noble/curves/ed25519";
@@ -263,17 +263,19 @@ export async function startValidator(
   const { windowsPathToWsl } = await import("./toolchain.js");
   const wslLedgerDir = windowsPathToWsl(ledgerDir);
 
-  // Build the inner command
+  // Build the inner command — shell-quote the ledger path to handle spaces
+  // (e.g. /mnt/c/Users/MY PC/.bake/sessions/...)
+  const wslLedgerPath = `${wslLedgerDir}/ledger`;
   const innerCmd = [
     'source "$HOME/.cargo/env" 2>/dev/null',
     'source "$HOME/.nvm/nvm.sh" 2>/dev/null',
     'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"',
-    `solana-test-validator --reset --rpc-port ${port} --faucet-sol 0 --ledger ${wslLedgerDir}/ledger`,
+    `solana-test-validator --reset --rpc-port ${port} --faucet-sol 0 --ledger '${wslLedgerPath}'`,
   ].join(" && ");
 
   const child = spawn(
     "wsl",
-    ["-d", "Ubuntu", "-e", "bash", "-lc", innerCmd],
+    ["-d", "Ubuntu", "-e", "bash", "-c", innerCmd],
     {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -306,23 +308,73 @@ export async function startValidator(
 export async function waitForValidator(
   rpcUrl: string,
   timeoutMs = 30_000,
+  ledgerDir?: string,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | null = null;
 
+  // On Windows with WSL2, two approaches are broken:
+  // 1. fetch() from Windows → WSL2 localhost forwarding is unreliable
+  // 2. Spawning a second WSL process for probe → crashes WSL2 (E_UNEXPECTED)
+  // Solution: poll the validator's own log file (written inside WSL to the
+  // ledger dir, which is on the Windows filesystem and readable from Node.js).
+  const useFileProbe = process.platform === "win32" && ledgerDir;
+
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getSlot" }),
-        signal: AbortSignal.timeout(3_000),
-      });
-      const body = (await res.json()) as { result?: number; error?: unknown };
-      if (typeof body.result === "number") {
-        return; // Validator is up
+      if (useFileProbe) {
+        // Scan the ledger dir for the validator's internal log file(s).
+        // solana-test-validator writes to validator-*.log inside the ledger.
+        const { readdirSync, readFileSync, statSync } = await import("node:fs");
+        const ledgerPath = join(ledgerDir, "ledger");
+        let found = false;
+        try {
+          const entries = readdirSync(ledgerPath);
+          for (const entry of entries) {
+            if (entry.startsWith("validator-") && entry.endsWith(".log")) {
+              const logFile = join(ledgerPath, entry);
+              try {
+                const stat = statSync(logFile);
+                // Only check logs modified in the last 30s (stale logs from
+                // a previous session should not count as "healthy").
+                if (Date.now() - stat.mtimeMs < 30_000) {
+                  const content = readFileSync(logFile, "utf-8");
+                  // "rpc bound to" appears in the structured log when the RPC is ready.
+                  // "JSON RPC URL" / "Processed Slot" appear in stdout (validator.log)
+                  // which may be empty due to pipe conflicts with the validator's own logging.
+                  if (
+                    content.includes("rpc bound to") ||
+                    content.includes("JSON RPC URL") ||
+                    content.includes("Processed Slot")
+                  ) {
+                    found = true;
+                    break;
+                  }
+                }
+              } catch {
+                // File locked or inaccessible — skip
+              }
+            }
+          }
+        } catch {
+          // Ledger dir doesn't exist yet — normal during early startup
+        }
+        if (found) return;
+        lastError = "Validator log not yet healthy (no JSON RPC URL / Processed Slot found)";
+      } else {
+        // Non-Windows: probe the RPC directly
+        const res = await fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getSlot" }),
+          signal: AbortSignal.timeout(3_000),
+        });
+        const body = (await res.json()) as { result?: number; error?: unknown };
+        if (typeof body.result === "number") {
+          return; // Validator is up
+        }
+        lastError = body.error ? JSON.stringify(body.error) : "unexpected response";
       }
-      lastError = body.error ? JSON.stringify(body.error) : "unexpected response";
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     }
@@ -339,6 +391,10 @@ export async function waitForValidator(
 /**
  * Stop a validator by sending SIGTERM, then SIGKILL if needed.
  * Best-effort — warns if process already dead.
+ *
+ * On Windows, the PID is the WSL relay process. Killing it may not propagate
+ * to solana-test-validator inside WSL, so we also explicitly kill any
+ * solana-test-validator processes inside WSL.
  */
 export function stopValidator(pid: number | null): void {
   if (pid == null) return;
@@ -348,6 +404,19 @@ export function stopValidator(pid: number | null): void {
     }
   } catch {
     // Process already dead or no permission — fine
+  }
+  // On Windows, also explicitly kill solana-test-validator inside WSL.
+  // The detached WSL process may survive SIGTERM to the relay PID.
+  if (process.platform === "win32") {
+    try {
+      const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+      execFileSync("wsl", ["-d", "Ubuntu", "-e", "pkill", "-f", "solana-test-validator"], {
+        timeout: 5_000,
+        windowsHide: true,
+      });
+    } catch {
+      // Best effort — validator may already be dead
+    }
   }
 }
 
@@ -390,7 +459,7 @@ export function openSession(opts: OpenSessionOpts): OpenSessionResult {
   const meta: SessionMeta = {
     id,
     createdAt: new Date().toISOString(),
-    workspaceDir: opts.workspaceDir,
+    workspaceDir: resolve(opts.workspaceDir),
     keypairPath,
     publicKey,
     rpcUrl: `http://127.0.0.1:${opts.port}`,
@@ -420,8 +489,10 @@ export async function startSessionValidator(
   meta.validatorRunning = true;
   saveSessionMeta(meta);
 
-  // Wait for it to be healthy
-  await waitForValidator(meta.rpcUrl);
+  // Wait for it to be healthy — WSL relay adds startup latency, so use a
+  // generous timeout (90s). Pass ledgerDir so the Windows file-based health
+  // check can poll the validator's log without spawning a second WSL process.
+  await waitForValidator(meta.rpcUrl, 90_000, ledgerDir);
 
   return meta;
 }

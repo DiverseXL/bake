@@ -78,15 +78,23 @@ async function runSessionOpen(opts: {
     }
   }
 
-  // Airdrop SOL to ephemeral keypair on local validator (best-effort)
+  // Airdrop SOL to ephemeral keypair on local validator (best-effort).
+  // Wrapped with a 15s timeout because `solana airdrop` can hang indefinitely
+  // when the faucet is disabled (`--faucet-sol 0`) or unreachable.
   if (!opts.noValidator) {
     try {
       const { runToolchainCommand } = await import("../lib/toolchain.js");
-      const airdropResult = await runToolchainCommand(
-        "solana",
-        ["airdrop", "5", meta.publicKey, "--url", meta.rpcUrl],
-        { cwd: process.cwd() },
-      );
+      const AIRDROP_TIMEOUT_MS = 15_000;
+      const airdropResult = await Promise.race([
+        runToolchainCommand(
+          "solana",
+          ["airdrop", "5", meta.publicKey, "--url", meta.rpcUrl],
+          { cwd: process.cwd() },
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Airdrop timed out")), AIRDROP_TIMEOUT_MS),
+        ),
+      ]);
       if (airdropResult.exitCode === 0 && !isJsonMode()) {
         logger.success("Airdropped 5 SOL to ephemeral keypair");
       }
