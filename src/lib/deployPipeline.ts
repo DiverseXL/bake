@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PublicKey } from "@solana/web3.js";
 import { getActiveCluster, getConnection } from "./connection.js";
@@ -12,6 +12,7 @@ import {
 import { runAnchorBuild, runToolchainCommand } from "./toolchain.js";
 import { getCurrentCommit, getGitRemote } from "./git.js";
 import { logger } from "./logger.js";
+import { remoteBuild, type RemoteBuildArtifacts } from "./remoteBuild.js";
 
 /** BPFLoaderUpgradeab1e — the upgradeable BPF loader all Anchor programs use. */
 const BPF_LOADER_UPGRADEABLE = new PublicKey(
@@ -59,17 +60,63 @@ async function runToolchainOrThrow(
   return result;
 }
 
-export async function runDeployPipeline(cwd: string): Promise<DeployPipelineResult> {
+export interface DeployPipelineOptions {
+  /** When set, build happens remotely via the bake build server instead of locally. */
+  remoteUrl?: string;
+}
+
+export async function runDeployPipeline(
+  cwd: string,
+  options: DeployPipelineOptions = {},
+): Promise<DeployPipelineResult> {
   const tomlPath = join(cwd, "Anchor.toml");
   if (!existsSync(tomlPath)) {
     throw new Error("No Anchor.toml found — run this from your program's root directory.");
   }
   const programName = resolveProgramName(cwd, readFileSync(tomlPath, "utf8"));
-  logger.info(`Building ${programName} (anchor build)`);
-  await runToolchainOrThrow("anchor", ["build", "--arch", "v0", "--tools-version", "v1.57"], cwd);
 
   const keypairPath = join(cwd, "target", "deploy", `${programName}-keypair.json`);
   const soPath = join(cwd, "target", "deploy", `${programName}.so`);
+  const idlDir = join(cwd, "target", "idl");
+
+  if (options.remoteUrl) {
+    // ---- Remote build path ----
+    logger.info(`Building ${programName} remotely via ${options.remoteUrl}`);
+    const artifacts: RemoteBuildArtifacts = await remoteBuild(cwd, options.remoteUrl);
+
+    // Ensure target/deploy/ directory exists
+    const deployDir = join(cwd, "target", "deploy");
+    if (!existsSync(deployDir)) {
+      mkdirSync(deployDir, { recursive: true });
+    }
+
+    // Write the .so file
+    writeFileSync(soPath, artifacts.soBuffer);
+    logger.info(`Wrote remote .so to ${soPath}`);
+
+    // Write the IDL if present
+    if (artifacts.idlBuffer) {
+      if (!existsSync(idlDir)) {
+        mkdirSync(idlDir, { recursive: true });
+      }
+      writeFileSync(join(idlDir, `${programName}.json`), artifacts.idlBuffer);
+      logger.info(`Wrote remote IDL to ${idlDir}/${programName}.json`);
+    }
+
+    // The keypair must exist locally for deploy — if missing, that's an error
+    if (!existsSync(keypairPath)) {
+      throw new Error(
+        `Program keypair not found at ${keypairPath}. ` +
+          "The remote build server compiled the .so, but you need the local keypair for deployment. " +
+          "Run a local build first to generate the keypair, or copy it from another source.",
+      );
+    }
+  } else {
+    // ---- Local build path (original behavior) ----
+    logger.info(`Building ${programName} (anchor build)`);
+    await runToolchainOrThrow("anchor", ["build", "--arch", "v0", "--tools-version", "v1.57"], cwd);
+  }
+
   if (!existsSync(keypairPath) || !existsSync(soPath)) {
     throw new Error(`Build completed but ${programName}'s deploy artifacts are missing.`);
   }

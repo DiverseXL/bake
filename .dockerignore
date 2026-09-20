@@ -1,7 +1,12 @@
 node_modules
 target
+**/target
 .anchor
+**/.anchor
 *.so
 *.log
 dist
 .git
+test-ledger
+**/test-ledger
+

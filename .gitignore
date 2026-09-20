@@ -5,10 +5,18 @@ dist/
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Local chain/validator state and docker prewarm caches
 test-ledger/
-.tmp-init*/
+.docker-deps/
 prewarm/
+.bake/
+.nightly-connect-session/
+
+# Ephemeral debug/test artifacts
+.tmp-*
 *.tgz
-patch.cjs
-patchAgents.cjs
-testHash.ts
+
+# Keypairs / wallets — never commit funded keys
+*keypair.json
+id.json

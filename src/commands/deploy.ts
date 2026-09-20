@@ -7,6 +7,7 @@ import { fail } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { getActiveCluster } from "../lib/connection.js";
 import { runDeployPipeline } from "../lib/deployPipeline.js";
+import { getBuildServerUrl } from "../lib/remoteBuild.js";
 import { resolveAnchorProjectRoot } from "../lib/anchorProject.js";
 import {
   formatFindingsList,
@@ -125,10 +126,23 @@ interface DeployJson {
   mock: boolean;
 }
 
-async function runDeploy(opts: { requireAudit?: boolean }): Promise<void> {
+async function runDeploy(opts: { requireAudit?: boolean; remote?: boolean }): Promise<void> {
   const cwd = resolveAnchorProjectRoot();
   if (!cwd) {
     fail("No Anchor.toml found — run this from your program's root directory.");
+  }
+
+  // Resolve remote build server URL
+  let remoteUrl: string | undefined;
+  if (opts.remote) {
+    const url = getBuildServerUrl();
+    if (!url) {
+      fail(
+        "--remote requires BAKE_BUILD_SERVER_URL to be set. " +
+          "Example: export BAKE_BUILD_SERVER_URL=http://localhost:7700",
+      );
+    }
+    remoteUrl = url!;
   }
 
   if (opts.requireAudit) {
@@ -140,6 +154,9 @@ async function runDeploy(opts: { requireAudit?: boolean }): Promise<void> {
 
   if (!isCiMode() && !isJsonMode() && !isYesMode()) {
     logger.info(`\n  Cluster:  ${cluster.name} (${chalk.dim(cluster.rpcUrl)})`);
+    if (remoteUrl) {
+      logger.info(`  Remote:   ${chalk.dim(remoteUrl)}`);
+    }
     const ok = await promptYesNo("\nDeploy to this cluster?");
     if (!ok) {
       logger.warn("Deploy cancelled.");
@@ -150,10 +167,11 @@ async function runDeploy(opts: { requireAudit?: boolean }): Promise<void> {
   // Delegate the full build→deploy→hash→register pipeline to the shared
   // function. This is the same function bake rollback calls — both commands
   // share exactly one implementation of the deploy sequence.
-  const pipelineStep = startStep("Building and deploying");
+  const buildLabel = remoteUrl ? "Building remotely and deploying" : "Building and deploying";
+  const pipelineStep = startStep(buildLabel);
   let result;
   try {
-    result = await runDeployPipeline(cwd);
+    result = await runDeployPipeline(cwd, { remoteUrl });
     pipelineStep.succeed(
       result.mock
         ? `Deployed (mock, entry #${result.entryIndex})`
@@ -210,16 +228,21 @@ export const deployCommand = new Command("deploy")
     "--require-audit",
     "run `bake audit` first and refuse to deploy on any critical/high finding",
   )
+  .option(
+    "--remote",
+    "build remotely via the bake build server instead of locally (requires BAKE_BUILD_SERVER_URL)",
+  )
   .action(
     async (opts: {
       json?: boolean;
       ci?: boolean;
       yes?: boolean;
       requireAudit?: boolean;
+      remote?: boolean;
     }) => {
       if (opts.json) process.env.BAKE_JSON = "true";
       if (opts.ci) process.env.BAKE_CI = "true";
       if (opts.yes) process.env.BAKE_YES = "true";
-      await runDeploy({ requireAudit: opts.requireAudit });
+      await runDeploy({ requireAudit: opts.requireAudit, remote: opts.remote });
     },
   );

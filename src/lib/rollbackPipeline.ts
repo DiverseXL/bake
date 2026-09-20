@@ -6,8 +6,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { type PublicKey } from "@solana/web3.js";
-import { resolveProgramIdFromAnchorProject } from "./anchorProject.js";
-import { runDeployPipeline } from "./deployPipeline.js";
+import {
+  resolveProgramIdFromAnchorProject,
+} from "./anchorProject.js";
+import { runDeployPipeline, type DeployPipelineOptions } from "./deployPipeline.js";
 import {
   checkoutCommit,
   commitExists,
@@ -56,6 +58,7 @@ export async function runRollbackPipeline(
   cwd: string,
   entryIndexArg?: number,
   programId?: PublicKey,
+  options: DeployPipelineOptions = {},
 ): Promise<RollbackPipelineResult> {
   // If --program was passed, skip Anchor.toml resolution entirely.
   // The cwd is still used for git checkout/deploy, but we don't require
@@ -116,7 +119,7 @@ export async function runRollbackPipeline(
 
   try {
     await checkoutCommit(projectCwd, target.commit);
-    const deployResult = await runDeployPipeline(projectCwd);
+    const deployResult = await runDeployPipeline(projectCwd, options);
     return {
       rolledBackToEntry: target.index,
       rolledBackToCommit: target.commit,

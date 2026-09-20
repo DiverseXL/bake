@@ -10,6 +10,7 @@ import {
   isMockRecipeBookClient,
   type RecipeBookEntry,
 } from "../lib/recipeBook.js";
+import { getBuildServerUrl } from "../lib/remoteBuild.js";
 import { resolveProgramIdFromAnchorProject } from "../lib/anchorProject.js";
 import {
   resolveAnchorProjectCwd,
@@ -109,14 +110,31 @@ export const rollbackCommand = new Command("rollback")
   .option("--json", "output results as JSON")
   .option("--ci", "disable spinners/colors, force JSON-safe output")
   .option("--yes", "skip confirmation prompt")
+  .option(
+    "--remote",
+    "build remotely via the bake build server instead of locally (requires BAKE_BUILD_SERVER_URL)",
+  )
   .action(
     async (
       entryIndexArg: string | undefined,
-      opts: { json?: boolean; ci?: boolean; yes?: boolean; program?: string },
+      opts: { json?: boolean; ci?: boolean; yes?: boolean; program?: string; remote?: boolean },
     ) => {
       if (opts.json) process.env.BAKE_JSON = "true";
       if (opts.ci) process.env.BAKE_CI = "true";
       if (opts.yes) process.env.BAKE_YES = "true";
+
+      // Resolve remote build server URL
+      let remoteUrl: string | undefined;
+      if (opts.remote) {
+        const url = getBuildServerUrl();
+        if (!url) {
+          fail(
+            "--remote requires BAKE_BUILD_SERVER_URL to be set. " +
+              "Example: export BAKE_BUILD_SERVER_URL=http://localhost:7700",
+          );
+        }
+        remoteUrl = url!;
+      }
 
       // Parse --program if provided
       let programIdOverride: PublicKey | undefined;
@@ -248,7 +266,7 @@ export const rollbackCommand = new Command("rollback")
         const pipelineStep = startStep(
           `Rolling back to entry #${target.index} (${shortCommit(target.commit)})`,
         );
-        const result = await runRollbackPipeline(cwd, entryIndex, programIdOverride);
+        const result = await runRollbackPipeline(cwd, entryIndex, programIdOverride, { remoteUrl });
         pipelineStep.succeed(
           `Rolled back to #${result.rolledBackToEntry}; new entry #${result.newEntryIndex}`,
         );
