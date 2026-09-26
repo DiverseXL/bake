@@ -79,8 +79,9 @@ export class TolerantStdioServerTransport implements Transport {
       // Every valid newline-framed message starts with '{'. Anything else
       // (e.g. "Content-Length:") means the client is header-framed.
       this._framing = b === 0x7b ? "newline" : "lsp";
-      if (this._framing === "lsp" && i > 0) {
-        // Drop the leading blank bytes so header parsing starts cleanly.
+      if (i > 0) {
+        // Drop leading blank lines/whitespace so parsing starts cleanly in
+        // both framings (a stray "\n" must not become an empty JSON message).
         this._buffer = this._buffer.subarray(i);
       }
       return;
