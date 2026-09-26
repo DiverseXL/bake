@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { PublicKey } from "@solana/web3.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { TolerantStdioServerTransport } from "./mcpStdioTransport.js";
 import { readGlobalConfig } from "../config/index.js";
 import { collectProgramStats } from "../commands/stats.js";
 import { fetchProgramLogHistory } from "../commands/logs.js";
@@ -688,7 +688,10 @@ export async function startBakeMcpServer(
   // Suppress decorative CLI banner noise on the MCP stdio channel.
   process.env.BAKE_CI = "true";
   const server = createBakeMcpServer({ cwd, loaded });
-  const transport = new StdioServerTransport();
+  // Tolerant transport: speaks newline framing (MCP spec) AND LSP-style
+  // Content-Length framing (used by some clients, e.g. the Grok CLI). See
+  // the header of mcpStdioTransport.ts before changing this.
+  const transport = new TolerantStdioServerTransport();
   await server.connect(transport);
   auditLog(
     `server connected (${loaded.policy.allowWrites ? "write-enabled" : "read-only"})`,

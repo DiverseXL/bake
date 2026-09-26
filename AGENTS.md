@@ -375,9 +375,9 @@ than reading this file.
 ## 10. MCP safety model — `bake mcp`
 
 `bake mcp` starts a local stdio-based MCP server (`@modelcontextprotocol/sdk`
-with `StdioServerTransport`) that exposes bake's capabilities to AI agents.
-This is the one command that lets an agent trigger real on-chain writes, so
-the safety model is the core design, not an afterthought.
+with a tolerant stdio transport — see 10.9) that exposes bake's capabilities
+to AI agents. This is the one command that lets an agent trigger real
+on-chain writes, so the safety model is the core design, not an afterthought.
 
 ### 10.1 Two tiers of tools
 
@@ -445,6 +445,7 @@ always knows what an agent is allowed to do.
 
 - `src/commands/mcp.ts` — command entrypoint, loads policy, starts server
 - `src/lib/mcpServer.ts` — tool definitions, handlers, confirmation tokens, audit log
+- `src/lib/mcpStdioTransport.ts` — tolerant stdio transport (dual framing; see 10.9)
 - `src/lib/mcpPolicy.ts` — Zod-validated policy schema and loader
 - `src/lib/cookieMcpClient.ts` — lazy singleton client for cookie-mcp (see 10.7)
 
@@ -466,6 +467,17 @@ an **isolated child MCP process** for read-only token/liquidity lookups
 - **Node version gate**: Checks `node --version >= 22` before spawning.
   Fails with a clear message if the running Node is too old.
 - **Cleanup**: The child process is terminated when bake's MCP server exits.
+
+**Local resolution (2026-09-26):** `cookieMcpClient.ts` resolves the bundled
+`cookie-mcp/dist/mcp/server.js` via `createRequire(import.meta.url)`. bake
+compiles to **ESM**, where the CommonJS `require` global does not exist — the
+old bare `require.resolve(...)` always threw and silently fell back to
+`npx -y cookie-mcp`, which re-downloads the package and routinely blew past
+the client's 60s request timeout. Do not remove the `createRequire` import to
+"simplify" — it is the only reason the bundled dependency (the documented
+behavior in REQUIREMENTS.md) actually loads. The spawned server uses
+`process.execPath`, not the string `"node"`, so it always runs the same Node
+as bake.
 
 ### 10.8 `bake fork` — clone a program into a local validator
 
@@ -514,7 +526,29 @@ is: fully stop one fork's validator (Ctrl+C, confirm clean shutdown)
 before starting another. If WSL crashes, run `wsl --shutdown` from
 PowerShell, wait a few seconds, then restart.
 
-### 10.9 Docker toolchain (`bake-toolchain` image)
+### 10.9 Tolerant stdio framing — newline AND Content-Length
+
+The MCP stdio spec frames messages as **newline-delimited JSON** (one
+JSON-RPC object per line), which is what the SDK's `StdioServerTransport`
+implements. Some real MCP clients instead use **LSP-style framing** — a
+`Content-Length: N\r\n\r\n` header followed by N bytes of JSON. The xAI Grok
+CLI is one (its binary embeds an `McpServerStdio` client and a
+`Content-Length: Expected` parser). Against a spec-only server those clients
+hang at the initialize handshake, which looks like "the agent can't detect
+bake".
+
+`src/lib/mcpStdioTransport.ts` (`TolerantStdioServerTransport`) sniffs the
+first non-whitespace byte on stdin: `{` means newline framing, anything else
+means header framing. It then speaks the detected framing in **both**
+directions. Conformant newline clients are unaffected (the newline path reuses
+the SDK's own `ReadBuffer`/`serializeMessage`).
+
+**Do NOT swap this back to a plain `StdioServerTransport`** and do NOT
+reintroduce the per-machine `.grok/mcp-stdio-bridge.js` shim — the whole point
+of the tolerant transport is that no external bridge is needed for
+LSP-framed clients.
+
+### 10.10 Docker toolchain (`bake-toolchain` image)
 
 A `Dockerfile` at the repo root packages the full, known-working
 Anchor/Solana toolchain into a container image. This is an **alternative to

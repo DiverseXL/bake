@@ -8,10 +8,16 @@
  * COOKIE_PRIVATE_KEY is NEVER set in the spawn env — this integration is
  * strictly read-only (token info, pool lookups). No wallet/signing capability.
  */
+import { createRequire } from "node:module";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CLUSTERS } from "../clusters/index.js";
 import { VERSION } from "./version.js";
+
+// bake compiles to ESM, where the CommonJS `require` global does not exist.
+// createRequire restores it so we can resolve the bundled cookie-mcp entry
+// point relative to this module (instead of falling back to a slow `npx`).
+const require = createRequire(import.meta.url);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,7 +83,9 @@ async function getClient(): Promise<Client> {
     // require.resolve works from any file inside the installed package — it
     // walks up from __dirname looking for node_modules/cookie-mcp.
     const resolved = require.resolve("cookie-mcp/dist/mcp/server.js");
-    serverCmd = "node";
+    // process.execPath (not "node") so we always spawn the same Node that is
+    // running bake, even when PATH resolves elsewhere.
+    serverCmd = process.execPath;
     serverArgs = [resolved];
     auditLog(`resolved cookie-mcp at ${resolved}`);
   } catch {
